@@ -4,7 +4,7 @@ import csv
 import datetime
 import os
 import shutil
-from glob import glob
+import statistics
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -15,7 +15,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchaudio
 from IPython.display import Audio
-from torch.utils.data import ConcatDataset, DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset
 from torchaudio.transforms import AmplitudeToDB, MelSpectrogram, Resample
 from tqdm.notebook import tqdm
 
@@ -255,28 +255,52 @@ class UrbanSoundTrainer:
         batch_size=32,
     ):
         if optim_params is None:
-            optim_params = {"lr": 0.0001}
+            self.optim_params = {"lr": 0.0001}
         if loss_function is None:
-            loss_function = nn.CrossEntropyLoss()
+            self.loss_function = nn.CrossEntropyLoss()
+        else:
+            self.loss_function = loss_function
 
-        self.model = model_class(input_shape=input_shape).to("cuda")
-        self.optimizer = optimizer(self.model.parameters(), **optim_params)
-        self.loss_function = loss_function
+        self.model_class = model_class
+        self.optimizer = optimizer
+
         self.spec_dir = spec_dir
         self.batch_size = batch_size
-        self.dataloader = self.prepare_dataset(fold=fold)
+        self.fold = fold
 
-    def prepare_dataset(self, fold=None):
+    def prepare_train_val_datasets(self, fold=1):
+        val_fold_name = f"fold{fold}"
+        spec_dir = Path(self.spec_dir)
+        train_folds = [
+            d for d in self.spec_dir.iterdir() if d.is_dir() and d.name != val_fold_name
+        ]
+        val_folds = [spec_dir / val_fold_name]
+
+        train_dataset = SpectrogramCVDataset(spec_fold_dirs=train_folds)
+        val_dataset = SpectrogramCVDataset(spec_fold_dirs=val_folds)
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=self.batch_size,
+            num_workers=8,
+            pin_memory=True,
+            shuffle=True,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=self.batch_size,
+            num_workers=8,
+            pin_memory=True,
+            shuffle=True,
+        )
+        return train_loader, val_loader
+
+    def prepare_overtrain_dataset(self, fold=None):
         if fold is not None:
-            spectrogram_dataset = SpectrogramDataset(
-                spec_dir=self.spec_dir / f"fold{fold}"
-            )
+            fold_dirs = [self.spec_dir / f"fold{fold}"]
         else:
-            all_folds = [
-                SpectrogramDataset(spec_dir=self.spec_dir / f"fold{i}")
-                for i in range(1, 11)
-            ]
-            spectrogram_dataset = ConcatDataset(all_folds)
+            fold_dirs = [self.spec_dir / f"fold{i}" for i in range(1, 11)]
+        spectrogram_dataset = SpectrogramCVDataset(spec_fold_dirs=fold_dirs)
         spectrogram_dataloader = DataLoader(
             spectrogram_dataset,
             batch_size=self.batch_size,
@@ -286,12 +310,61 @@ class UrbanSoundTrainer:
         )
         return spectrogram_dataloader
 
-    def training_loop(self, num_epochs):
+    def cross_validation_loop(self, num_epochs):
+        print(
+            f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training with cross-validation."
+        )
+        train_losses = []
+        train_accs = []
+        val_losses = []
+        val_accs = []
+        for fold_num in range(1, 11):
+            print()
+            print(f"Val fold: {fold_num}")
+            model = self.model_class(input_shape=input_shape).to("cuda")
+            optimizer = self.optimizer(model.parameters(), **self.optim_params)
+            train_dataloader, val_dataloader = self.prepare_train_val_datasets(
+                fold=fold_num
+            )
+            for epoch in range(num_epochs):
+                print(
+                    f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Epoch {epoch+1}/{num_epochs}, ",
+                    end="\n",
+                )
+                train_loss, train_acc = self.train(train_dataloader, model, optimizer)
+                print(
+                    f"\tTrain Loss: {train_loss:.5f}, Train Acc: {train_acc:.2f}%",
+                    end="",
+                )
+                val_loss, val_acc = self.validate(val_dataloader, model)
+                print(
+                    f"\tVal Loss: {val_loss:.5f}, Val Acc: {val_acc:.2f}%",
+                    end="\n",
+                )
+            train_losses.append(train_loss)
+            train_accs.append(train_acc)
+            val_losses.append(val_loss)
+            val_accs.append(val_acc)
+        print()
+        mean_train_loss = statistics.mean(train_losses)
+        mean_train_acc = statistics.mean(train_accs)
+        mean_val_loss = statistics.mean(val_losses)
+        mean_val_acc = statistics.mean(val_accs)
+        print(f"Mean training loss: {mean_train_loss:.5f}")
+        print(f"Mean training accuracy: {mean_train_acc:.2f}%")
+        print(f"Mean validation loss: {mean_val_loss:.5f}")
+        print(f"Mean validation accuracy: {mean_val_acc:.2f}%")
+        return mean_train_loss, mean_train_acc, mean_val_loss, mean_val_acc
+
+    def training_loop_train_only(self, num_epochs):
+        model = self.model_class(input_shape=input_shape).to("cuda")
+        optimizer = self.optimizer(model.parameters(), **self.optim_params)
         print(
             f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training."
         )
         for epoch in range(num_epochs):
-            train_loss, train_acc = self.train()
+            dataloader = self.prepare_overtrain_dataset(self.fold)
+            train_loss, train_acc = self.train(dataloader, model, optimizer)
             print(
                 f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Epoch {epoch+1}/{num_epochs}, ",
                 end="",
@@ -302,20 +375,20 @@ class UrbanSoundTrainer:
             )
         return train_loss, train_acc
 
-    def train(self):
-        self.model.train()
+    def train(self, dataloader, model, optimizer):
+        model.train()
         epoch_loss = 0.0
         epoch_correct = 0
         epoch_total = 0
-        for batch_idx, (data, target) in enumerate(self.dataloader):
+        for batch_idx, (data, target) in enumerate(dataloader):
             data = data.to("cuda")
             # print(data.shape)
             data = data.unsqueeze(1)
             data = F.normalize(data, dim=2)
 
             target = target.to("cuda")
-            self.optimizer.zero_grad()
-            output = self.model(data)
+            optimizer.zero_grad()
+            output = model(data)
             loss = self.loss_function(output, target)
             epoch_loss += loss.item()
 
@@ -325,24 +398,49 @@ class UrbanSoundTrainer:
             epoch_correct += (predicted == target).sum().item()
 
             loss.backward()
-            self.optimizer.step()
-        avg_loss = epoch_loss / len(self.dataloader)
+            optimizer.step()
+        avg_loss = epoch_loss / len(dataloader)
         avg_acc = 100.0 * epoch_correct / epoch_total
         return avg_loss, avg_acc
 
+    def validate(self, dataloader, model):
+        model.eval()
+        with torch.no_grad():
+            epoch_loss = 0.0
+            epoch_correct = 0
+            epoch_total = 0
+
+            for batch_idx, (data, target) in enumerate(dataloader):
+                data = data.to("cuda")
+                data = data.unsqueeze(1)
+                data = F.normalize(data, dim=2)
+
+                target = target.to("cuda")
+                output = model(data)
+                loss = self.loss_function(output, target)
+                epoch_loss += loss.item()
+
+                # Compute accuracy
+                _, predicted = torch.max(output.data, 1)
+                epoch_total += target.size(0)
+                epoch_correct += (predicted == target).sum().item()
+        avg_loss = epoch_loss / len(dataloader)
+        avg_acc = 100.0 * epoch_correct / epoch_total
+        return avg_loss, avg_acc
+
+    def run_train_only(self, epochs=10):
+        return self.training_loop_train_only(epochs)
+
     def run(self, epochs=10):
-        return self.training_loop(epochs)
+        return self.cross_validation_loop(epochs)
 
 
 class SpectrogramDataset(Dataset):
     def __init__(self, spec_dir, transform=None, target_transform=None):
-        self.spec_dir = spec_dir
+        self.spec_dir = Path(spec_dir)
         self.transform = transform
         self.target_transform = target_transform
-        self.spec_paths = [
-            os.path.join(self.spec_dir, file)
-            for file in glob("*.spec", root_dir=self.spec_dir)
-        ]
+        self.spec_paths = list(spec_dir.glob("*.spec"))
 
     def __len__(self):
         return len(self.spec_paths)
@@ -350,6 +448,26 @@ class SpectrogramDataset(Dataset):
     def __getitem__(self, idx):
         file_path = self.spec_paths[idx]
         file_name = os.path.basename(file_path)
+        spec = torch.load(self.spec_paths[idx])
+        parts = file_name.split("-")
+        label = int(parts[1])
+        return spec, label
+
+
+class SpectrogramCVDataset(Dataset):
+    def __init__(self, spec_fold_dirs, transform=None, target_transform=None):
+        self.transform = transform
+        self.target_transform = target_transform
+        self.spec_paths = []
+        for fold_dir in spec_fold_dirs:
+            self.spec_paths.extend(list(Path(fold_dir).glob("*.spec")))
+
+    def __len__(self):
+        return len(self.spec_paths)
+
+    def __getitem__(self, idx):
+        file_path = self.spec_paths[idx]
+        file_name = Path(file_path).name
         spec = torch.load(self.spec_paths[idx])
         parts = file_name.split("-")
         label = int(parts[1])
@@ -458,8 +576,12 @@ class BasicCNN_3(nn.Module):
 
 # %%
 if __name__ == "__main__":
-    for n_mels in [10, 25, 30, 50, 75, 100, 150]:
-        preprocessor = UrbanSoundPreprocessor(n_mels=n_mels, dataset_name=n_mels)
+    n_mels_list = [10, 25, 30, 50, 75, 100, 150]
+    for n_mels in n_mels_list:
+        print("-" * 50)
+        preprocessor = UrbanSoundPreprocessor(
+            n_mels=n_mels, dataset_name=n_mels, fold=None
+        )
         preprocessor.run()
         input_shape = (preprocessor.n_mels, preprocessor.chunk_timesteps)
         print(f"{n_mels=} {input_shape=}")
@@ -469,9 +591,15 @@ if __name__ == "__main__":
                 input_shape=input_shape,
                 model_class=BasicCNN,
                 batch_size=8,
+                fold=None,
+            )
+            train_loss, train_acc, val_loss, val_acc = trainer.run(15)
+            print()
+            print(
+                f"{n_mels=}: {train_loss=:.5f} {train_acc=:.2f}% {val_loss=:.5f} {val_acc=:.2f}%"
             )
         except RuntimeError as e:
             print(f"error in n_mels {n_mels}: {e}")
             continue
-        train_loss, train_acc = trainer.run(epochs=15)
-        print(f"{n_mels=}: {train_loss=} {train_acc=}")
+        # train_loss, train_acc = trainer.run_train_only(epochs=15)
+        # print(f"{n_mels=}: {train_loss=} {train_acc=}")
