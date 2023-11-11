@@ -81,12 +81,6 @@ class UrbanSoundPreprocessor:
 
         return mel_spec_db
 
-    def frame_timings(self, spec):
-        num_frames = spec.shape[-1]
-        time_per_frame = self.hop_length / self.sample_rate
-        time_values = (torch.arange(0, num_frames) * time_per_frame).numpy()
-        return num_frames, time_per_frame, time_values
-
     def preprocess_all_folds(self, index):
         for record in tqdm(index, total=len(index)):
             fold_dir = Path(f"fold{record['fold']}")
@@ -100,42 +94,6 @@ class UrbanSoundPreprocessor:
             mel_spec_db = self.make_mel_spectrogram(audio)
 
             torch.save(mel_spec_db, dest_file)
-
-    def plot_saved_spec(self, path):
-        spec = torch.load(path)
-        self.plot_spec(spec)
-
-    def plot_spec(self, spec):
-        _, _, time_values = self.frame_timings(spec)
-        fig, axs = plt.subplots(1, 1, figsize=(4, 4))
-
-        axs.set_xticks(
-            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
-            np.round(time_values[:: int(len(time_values) / 5)], 2),
-        )
-
-        axs.imshow(spec.numpy(), origin="lower")
-        plt.show()
-
-    def plot_audio(self, audio):
-        mel_spec_db = self.make_mel_spectrogram(audio)
-
-        _, _, time_values = self.frame_timings(mel_spec_db)
-
-        fig, axs = plt.subplots(2, 1, figsize=(8, 4))
-        plt.style.use("dark_background")
-
-        axs[0].set_xlabel("Time")
-        axs[0].set_ylabel("Amplitude")
-        axs[0].plot(audio.t().numpy())
-
-        axs[1].set_xticks(
-            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
-            np.round(time_values[:: int(len(time_values) / 5)], 2),
-        )
-        axs[1].imshow(mel_spec_db.numpy())
-        plt.show()
-        Audio(audio, rate=self.sample_rate)
 
     def split_spectrogram(self, spec: torch.Tensor, chunk_size: int) -> torch.Tensor:
         """
@@ -215,25 +173,6 @@ class UrbanSoundPreprocessor:
                 torch.save(chunks[i], dest_file)
                 count += 1
         print(f"{count} chunk specs saved")
-
-    def show_sample(self):
-        audio, sr, _, _ = self.preprocess(
-            "/home/davery/ml/urbansound8k/fold1/203356-3-0-3.wav"
-        )
-        mel_spec_db = self.make_mel_spectrogram(audio)
-        print(f"{mel_spec_db.shape=}")
-        split_spec = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
-        print(f"{split_spec.shape=}")
-        print("mel_spec_db:")
-        self.plot_spec(mel_spec_db)
-        for i in range(len(split_spec)):
-            self.plot_spec(split_spec[i])
-        Audio("/home/davery/ml/urbansound8k/fold1/203356-3-0-3.wav")
-
-    def plot_sample_spec(self):
-        self.plot_saved_spec(
-            "/home/davery/ml/urbansound8k/processed/fold1/203356-3-0-3.wav-0.spec"
-        )
 
     def run(self):
         index = self.load_index()
@@ -439,6 +378,69 @@ class UrbanSoundTrainer:
         return self.cross_validation_loop(epochs, single_fold=single_fold)
 
 
+class AudioPlot:
+    def plot_saved_spec(self, path):
+        spec = torch.load(path)
+        self.plot_spec(spec)
+
+    def plot_sample_spec(self):
+        self.plot_saved_spec(
+            "/home/davery/ml/urbansound8k/processed/fold1/203356-3-0-3.wav-0.spec"
+        )
+
+    def show_sample(self):
+        audio, sr, _, _ = self.preprocess(
+            "/home/davery/ml/urbansound8k/fold1/203356-3-0-3.wav"
+        )
+        mel_spec_db = self.make_mel_spectrogram(audio)
+        print(f"{mel_spec_db.shape=}")
+        split_spec = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
+        print(f"{split_spec.shape=}")
+        print("mel_spec_db:")
+        self.plot_spec(mel_spec_db)
+        for i in range(len(split_spec)):
+            self.plot_spec(split_spec[i])
+        Audio("/home/davery/ml/urbansound8k/fold1/203356-3-0-3.wav")
+
+    def plot_spec(self, spec):
+        _, _, time_values = self.frame_timings(spec)
+        fig, axs = plt.subplots(1, 1, figsize=(4, 4))
+
+        axs.set_xticks(
+            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
+            np.round(time_values[:: int(len(time_values) / 5)], 2),
+        )
+
+        axs.imshow(spec.numpy(), origin="lower")
+        plt.show()
+
+    def plot_audio(self, audio):
+        mel_spec_db = self.make_mel_spectrogram(audio)
+
+        _, _, time_values = self.frame_timings(mel_spec_db)
+
+        fig, axs = plt.subplots(2, 1, figsize=(8, 4))
+        plt.style.use("dark_background")
+
+        axs[0].set_xlabel("Time")
+        axs[0].set_ylabel("Amplitude")
+        axs[0].plot(audio.t().numpy())
+
+        axs[1].set_xticks(
+            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
+            np.round(time_values[:: int(len(time_values) / 5)], 2),
+        )
+        axs[1].imshow(mel_spec_db.numpy())
+        plt.show()
+        Audio(audio, rate=self.sample_rate)
+
+    def frame_timings(self, spec):
+        num_frames = spec.shape[-1]
+        time_per_frame = self.hop_length / self.sample_rate
+        time_values = (torch.arange(0, num_frames) * time_per_frame).numpy()
+        return num_frames, time_per_frame, time_values
+
+
 class SpectrogramDataset(Dataset):
     def __init__(self, spec_dir, transform=None, target_transform=None):
         self.spec_dir = Path(spec_dir)
@@ -476,43 +478,6 @@ class SpectrogramCVDataset(Dataset):
         parts = file_name.split("-")
         label = int(parts[1])
         return spec, label
-
-
-# %%
-class AudioPlot:
-    def plot_saved_spec(self, path):
-        spec = torch.load(path)
-        self.plot_spec(spec)
-
-    def plot_spec(self, spec):
-        _, _, time_values = self.frame_timings(spec)
-        fig, axs = plt.subplots(1, 1, figsize=(4, 4))
-
-        axs.set_xticks(
-            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
-            np.round(time_values[:: int(len(time_values) / 5)], 2),
-        )
-
-        axs.imshow(spec.numpy(), origin="lower")
-        plt.show()
-
-    def plot_audio(self, audio):
-        mel_spec_db = self.make_mel_spectrogram(audio)
-        _, _, time_values = self.frame_timings(mel_spec_db)
-        fig, axs = plt.subplots(2, 1, figsize=(8, 4))
-        plt.style.use("dark_background")
-
-        axs[0].set_xlabel("Time")
-        axs[0].set_ylabel("Amplitude")
-        axs[0].plot(audio.t().numpy())
-
-        axs[1].set_xticks(
-            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
-            np.round(time_values[:: int(len(time_values) / 5)], 2),
-        )
-        axs[1].imshow(mel_spec_db.numpy())
-        plt.show()
-        Audio(audio, rate=self.sample_rate)
 
 
 # %%
