@@ -17,7 +17,7 @@ import torchaudio
 from IPython.display import Audio
 from torch.utils.data import DataLoader, Dataset
 from torchaudio.transforms import AmplitudeToDB, MelSpectrogram, Resample
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 print(torch.cuda.is_available())
 
@@ -310,7 +310,7 @@ class UrbanSoundTrainer:
         )
         return spectrogram_dataloader
 
-    def cross_validation_loop(self, num_epochs):
+    def cross_validation_loop(self, num_epochs, single_fold=None):
         print(
             f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training with cross-validation."
         )
@@ -318,7 +318,11 @@ class UrbanSoundTrainer:
         train_accs = []
         val_losses = []
         val_accs = []
-        for fold_num in range(1, 11):
+        if single_fold is None:
+            fold_nums = range(1, 11)
+        else:
+            fold_nums = [single_fold]
+        for fold_num in fold_nums:
             print()
             print(f"Val fold: {fold_num}")
             model = self.model_class(input_shape=input_shape).to("cuda")
@@ -431,8 +435,8 @@ class UrbanSoundTrainer:
     def run_train_only(self, epochs=10):
         return self.training_loop_train_only(epochs)
 
-    def run(self, epochs=10):
-        return self.cross_validation_loop(epochs)
+    def run(self, epochs=10, single_fold=None):
+        return self.cross_validation_loop(epochs, single_fold=single_fold)
 
 
 class SpectrogramDataset(Dataset):
@@ -475,6 +479,43 @@ class SpectrogramCVDataset(Dataset):
 
 
 # %%
+class AudioPlot:
+    def plot_saved_spec(self, path):
+        spec = torch.load(path)
+        self.plot_spec(spec)
+
+    def plot_spec(self, spec):
+        _, _, time_values = self.frame_timings(spec)
+        fig, axs = plt.subplots(1, 1, figsize=(4, 4))
+
+        axs.set_xticks(
+            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
+            np.round(time_values[:: int(len(time_values) / 5)], 2),
+        )
+
+        axs.imshow(spec.numpy(), origin="lower")
+        plt.show()
+
+    def plot_audio(self, audio):
+        mel_spec_db = self.make_mel_spectrogram(audio)
+        _, _, time_values = self.frame_timings(mel_spec_db)
+        fig, axs = plt.subplots(2, 1, figsize=(8, 4))
+        plt.style.use("dark_background")
+
+        axs[0].set_xlabel("Time")
+        axs[0].set_ylabel("Amplitude")
+        axs[0].plot(audio.t().numpy())
+
+        axs[1].set_xticks(
+            np.arange(0, len(time_values), step=int(len(time_values) / 5)),
+            np.round(time_values[:: int(len(time_values) / 5)], 2),
+        )
+        axs[1].imshow(mel_spec_db.numpy())
+        plt.show()
+        Audio(audio, rate=self.sample_rate)
+
+
+# %%
 class BasicCNN(nn.Module):
     def __init__(self, input_shape, num_classes=10):
         super(BasicCNN, self).__init__()
@@ -486,18 +527,17 @@ class BasicCNN(nn.Module):
             dummy_input = torch.zeros(
                 1, 1, input_shape[0], input_shape[1]
             )  # Batch size of 1, 1 channel, input_shape[0] x input_shape[1] image
-            dummy_output = self.pre_flatten(dummy_input)
-            print(f"{dummy_input.shape=} {dummy_output.shape=}")
+            dummy_output = self.convolute(dummy_input)
             self.flat_features = int(torch.numel(dummy_output) / dummy_output.shape[0])
         self.fc1 = nn.Linear(self.flat_features, num_classes)
 
-    def pre_flatten(self, x):
+    def convolute(self, x):
         x = self.relu(self.conv1(x))
         x = self.pool1(x)
         return x
 
     def forward(self, x):
-        x = self.pre_flatten(x)
+        x = self.convolute(x)
         x = x.view(-1, self.flat_features)
         x = self.fc1(x)
         return x
@@ -505,7 +545,7 @@ class BasicCNN(nn.Module):
 
 # %%
 class BasicCNN_2(nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, input_shape, num_classes=10):
         super(BasicCNN_2, self).__init__()
         self.conv1 = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1)
         self.conv1a = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
@@ -514,18 +554,22 @@ class BasicCNN_2(nn.Module):
 
         with torch.no_grad():
             dummy_input = torch.zeros(
-                1, 1, 100, 500
-            )  # Batch size of 1, 1 channel, 100x500 image
-            dummy_output = self.pool1(self.conv1(dummy_input))
+                1, 1, input_shape[0], input_shape[1]
+            )  # Batch size of 1, 1 channel, input_shape[0] x input_shape[1] image
+            dummy_output = self.convolute(dummy_input)
             self.flat_features = int(torch.numel(dummy_output) / dummy_output.shape[0])
 
         self.fc1 = nn.Linear(self.flat_features, num_classes)
 
-    def forward(self, x):
+    def convolute(self, x):
         x = self.relu(self.conv1a(self.conv1(x)))
         x = self.pool1(x)
+        return x
+
+    def forward(self, x):
+        x = self.convolute(x)
         x = x.view(-1, self.flat_features)
-        x = self.relu(self.fc1(x))
+        x = self.fc1(x)
         return x
 
 
@@ -548,15 +592,17 @@ class BasicCNN_3(nn.Module):
             dummy_input = torch.zeros(
                 1, 1, input_shape[0], input_shape[1]
             )  # Batch size of 1, 1 channel, input_shape[0] x input_shape[1] image
-            dummy_output = self.pre_flatten(dummy_input)
-            print(f"{dummy_input.shape=} {dummy_output.shape=}")
+            dummy_output = self.convolute(dummy_input)
+            print(
+                f"input_shape: {dummy_input.shape} -> post-convolution: {dummy_output.shape}"
+            )
             self.flat_features = int(torch.numel(dummy_output) / dummy_output.shape[0])
 
         self.fc1 = nn.Linear(self.flat_features, 512)
         self.fc2 = nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, num_classes)
 
-    def pre_flatten(self, x):
+    def convolute(self, x):
         x = self.relu(self.conv1a(self.conv1(x)))
         x = self.pool1(x)
         x = self.relu(self.conv2a(self.conv2(x)))
@@ -566,7 +612,7 @@ class BasicCNN_3(nn.Module):
         return x
 
     def forward(self, x):
-        x = self.pre_flatten(x)
+        x = self.convolute(x)
         x = x.view(-1, self.flat_features)
         x = self.relu(self.fc1(x))
         x = self.relu(self.fc2(x))
@@ -576,30 +622,50 @@ class BasicCNN_3(nn.Module):
 
 # %%
 if __name__ == "__main__":
-    n_mels_list = [10, 25, 30, 50, 75, 100, 150]
+    n_mels_list = [75]
+    n_fft_list = [512]
+    chunk_timesteps = [256, 512, 1024]
+    generate_specs = False
+    train_only = True
+
     for n_mels in n_mels_list:
-        print("-" * 50)
-        preprocessor = UrbanSoundPreprocessor(
-            n_mels=n_mels, dataset_name=n_mels, fold=None
-        )
-        preprocessor.run()
-        input_shape = (preprocessor.n_mels, preprocessor.chunk_timesteps)
-        print(f"{n_mels=} {input_shape=}")
-        try:
-            trainer = UrbanSoundTrainer(
-                spec_dir=preprocessor.dest_dir,
-                input_shape=input_shape,
-                model_class=BasicCNN,
-                batch_size=8,
-                fold=None,
-            )
-            train_loss, train_acc, val_loss, val_acc = trainer.run(15)
-            print()
-            print(
-                f"{n_mels=}: {train_loss=:.5f} {train_acc=:.2f}% {val_loss=:.5f} {val_acc=:.2f}%"
-            )
-        except RuntimeError as e:
-            print(f"error in n_mels {n_mels}: {e}")
-            continue
-        # train_loss, train_acc = trainer.run_train_only(epochs=15)
-        # print(f"{n_mels=}: {train_loss=} {train_acc=}")
+        for n_fft in n_fft_list:
+            for chunk_timestep in chunk_timesteps:
+                print("-" * 50)
+                dataset_name = f"n_mels{n_mels}-n_fft{n_fft}-ct{chunk_timestep}"
+                print(dataset_name)
+                preprocessor = UrbanSoundPreprocessor(
+                    n_mels=n_mels,
+                    dataset_name=dataset_name,
+                    n_fft=n_fft,
+                    chunk_timesteps=chunk_timestep,
+                    fold=None,
+                )
+                if generate_specs:
+                    preprocessor.run()
+                input_shape = (preprocessor.n_mels, preprocessor.chunk_timesteps)
+                print(f"{n_mels=} {input_shape=}")
+                try:
+                    trainer = UrbanSoundTrainer(
+                        spec_dir=preprocessor.dest_dir,
+                        input_shape=input_shape,
+                        model_class=BasicCNN_3,
+                        batch_size=128,
+                        fold=None,
+                    )
+                    if train_only:
+                        train_loss, train_acc = trainer.run_train_only(epochs=30)
+                        print()
+                        print(f"{dataset_name=}: {train_loss=} {train_acc=}")
+                    else:
+                        train_loss, train_acc, val_loss, val_acc = trainer.run(
+                            epochs=15, single_fold=1
+                        )
+                        print()
+                        print(
+                            f"{dataset_name}: {train_loss=:.5f} {train_acc=:.2f}% {val_loss=:.5f} {val_acc=:.2f}%"
+                        )
+
+                except RuntimeError as e:
+                    print(f"error in {dataset_name}: {e}")
+                    continue
