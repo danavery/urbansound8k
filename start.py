@@ -1,6 +1,5 @@
 # %%
 import datetime
-import os
 import statistics
 from pathlib import Path
 
@@ -48,8 +47,8 @@ class UrbanSoundTrainer:
         ]
         val_folds = [spec_dir / val_fold_name]
 
-        train_dataset = SpectrogramCVDataset(spec_fold_dirs=train_folds)
-        val_dataset = SpectrogramCVDataset(spec_fold_dirs=val_folds)
+        train_dataset = SpectrogramDataset(spec_fold_dirs=train_folds)
+        val_dataset = SpectrogramDataset(spec_fold_dirs=val_folds)
 
         train_loader = DataLoader(
             train_dataset,
