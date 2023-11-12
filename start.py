@@ -72,7 +72,7 @@ class UrbanSoundTrainer:
             fold_dirs = [self.spec_dir / f"fold{fold}"]
         else:
             fold_dirs = [self.spec_dir / f"fold{i}" for i in range(1, 11)]
-        spectrogram_dataset = SpectrogramCVDataset(spec_fold_dirs=fold_dirs)
+        spectrogram_dataset = SpectrogramDataset(spec_fold_dirs=fold_dirs)
         spectrogram_dataloader = DataLoader(
             spectrogram_dataset,
             batch_size=self.batch_size,
@@ -212,25 +212,6 @@ class UrbanSoundTrainer:
 
 
 class SpectrogramDataset(Dataset):
-    def __init__(self, spec_dir, transform=None, target_transform=None):
-        self.spec_dir = Path(spec_dir)
-        self.transform = transform
-        self.target_transform = target_transform
-        self.spec_paths = list(spec_dir.glob("*.spec"))
-
-    def __len__(self):
-        return len(self.spec_paths)
-
-    def __getitem__(self, idx):
-        file_path = self.spec_paths[idx]
-        file_name = os.path.basename(file_path)
-        spec = torch.load(self.spec_paths[idx])
-        parts = file_name.split("-")
-        label = int(parts[1])
-        return spec, label
-
-
-class SpectrogramCVDataset(Dataset):
     def __init__(self, spec_fold_dirs, transform=None, target_transform=None):
         self.transform = transform
         self.target_transform = target_transform
