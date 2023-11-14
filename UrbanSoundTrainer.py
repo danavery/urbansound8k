@@ -95,7 +95,9 @@ class UrbanSoundTrainer:
         for fold_num in fold_nums:
             print()
             print(f"Val fold: {fold_num}")
-            model = network_factory(model_type=self.model_type, **self.model_kwargs).to("cuda")
+            model = network_factory(model_type=self.model_type, **self.model_kwargs).to(
+                "cuda"
+            )
             optimizer = self.optimizer(model.parameters(), **self.optim_params)
             train_dataloader, val_dataloader = self.prepare_train_val_datasets(
                 fold=fold_num
@@ -131,7 +133,9 @@ class UrbanSoundTrainer:
         return mean_train_loss, mean_train_acc, mean_val_loss, mean_val_acc
 
     def training_loop_train_only(self, num_epochs):
-        model = network_factory(model_type=self.model_type, **self.model_kwargs).to("cuda")
+        model = network_factory(model_type=self.model_type, **self.model_kwargs).to(
+            "cuda"
+        )
         optimizer = self.optimizer(model.parameters(), **self.optim_params)
         print(
             f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training."
