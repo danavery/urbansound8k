@@ -1,6 +1,7 @@
-from BasicCNN import BasicCNN
-from BasicCNN_2 import BasicCNN_2
-from BasicCNN_3 import BasicCNN_3
+from models.BasicCNN import BasicCNN
+from models.BasicCNN_2 import BasicCNN_2
+from models.BasicCNN_3 import BasicCNN_3
+
 
 def network_factory(model_type, **model_kwargs):
     if model_type == "BasicCNN":
