@@ -6,22 +6,23 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.cuda.amp import GradScaler, autocast
+from torch.utils.data import DataLoader
+
 from network_factory import network_factory
 from SpectrogramDataset import SpectrogramDataset
-from torch.utils.data import DataLoader
 
 
 class UrbanSoundTrainer:
     def __init__(
         self,
         spec_dir,
-        model_type,
-        model_kwargs,
+        model_template,
         optimizer=optim.Adam,
         optim_params=None,
         loss_function=None,
         fold=1,
-        batch_size=32,
+        batch_size=256,
     ):
         if optim_params is None:
             self.optim_params = {"lr": 0.0001}
@@ -30,9 +31,10 @@ class UrbanSoundTrainer:
         else:
             self.loss_function = loss_function
 
-        self.model_type = model_type
-        self.model_kwargs = model_kwargs
+        self.model_type = model_template["model_type"]
+        self.model_kwargs = model_template["model_kwargs"]
         self.optimizer = optimizer
+        self.optim_params = optim_params
 
         self.spec_dir = spec_dir
         self.batch_size = batch_size
@@ -160,20 +162,22 @@ class UrbanSoundTrainer:
 
     def train(self, dataloader, model, optimizer):
         model.train()
+        scaler = GradScaler()
         epoch_loss = 0.0
         epoch_correct = 0
         epoch_total = 0
         for batch_idx, (data, target) in enumerate(dataloader):
-            data = data.to("cuda")
+            data, target = data.to("cuda"), target.to("cuda")
             if data.dim() == 3:
                 data = data.unsqueeze(1)
 
             data = F.normalize(data, dim=2)
 
-            target = target.to("cuda")
             optimizer.zero_grad()
-            output = model(data)
-            loss = self.loss_function(output, target)
+
+            with autocast():
+                output = model(data)
+                loss = self.loss_function(output, target)
             epoch_loss += loss.item()
 
             # Compute accuracy
@@ -181,8 +185,9 @@ class UrbanSoundTrainer:
             epoch_total += target.size(0)
             epoch_correct += (predicted == target).sum().item()
 
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
         avg_loss = epoch_loss / len(dataloader)
         avg_acc = 100.0 * epoch_correct / epoch_total
         return avg_loss, avg_acc
@@ -200,7 +205,8 @@ class UrbanSoundTrainer:
                 data = F.normalize(data, dim=2)
 
                 target = target.to("cuda")
-                output = model(data)
+                with autocast():
+                    output = model(data)
                 loss = self.loss_function(output, target)
                 epoch_loss += loss.item()
 

@@ -6,9 +6,9 @@ print(torch.cuda.is_available())
 
 # %%
 if __name__ == "__main__":
-    n_mels_list = [75]
-    n_fft_list = [512]
-    chunk_timesteps = [256, 512, 1024]
+    n_mels_list = [100]
+    n_fft_list = [1024]
+    chunk_timesteps = [512]
     generate_specs = False
     train_only = True
     model_type = "ResNet50"
@@ -36,9 +36,9 @@ if __name__ == "__main__":
                 try:
                     trainer = UrbanSoundTrainer(
                         spec_dir=preprocessor.dest_dir,
-                        model_type=model_type,
-                        model_kwargs=model_kwargs,
-                        batch_size=512,
+                        model_template={"model_type": model_type, "model_kwargs": model_kwargs},
+                        batch_size=32,
+                        optim_params={"lr": 0.01},
                         fold=None,
                     )
                     if train_only:
