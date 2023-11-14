@@ -19,6 +19,12 @@ class SpectrogramDataset(Dataset):
         file_path = self.spec_paths[idx]
         file_name = Path(file_path).name
         spec = torch.load(self.spec_paths[idx])
+        if self.transform:
+            spec = self.transform(spec)
+
         parts = file_name.split("-")
         label = int(parts[1])
+        if self.target_transform:
+            label = self.target_transform(label)
+
         return spec, label

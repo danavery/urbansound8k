@@ -17,9 +17,15 @@ class BasicCNN(nn.Module):
             self.flat_features = int(torch.numel(dummy_output) / dummy_output.shape[0])
         self.fc1 = nn.Linear(self.flat_features, num_classes)
 
+    def train_dev_transforms(self):
+        return None
+
     def convolute(self, x):
         x = self.relu(self.conv1(x))
         x = self.pool1(x)
+        return x
+
+    def preprocess(self, x):
         return x
 
     def forward(self, x):

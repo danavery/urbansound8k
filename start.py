@@ -9,9 +9,10 @@ if __name__ == "__main__":
     n_mels_list = [75]
     n_fft_list = [512]
     chunk_timesteps = [256, 512, 1024]
-    generate_specs = True
-    train_only = False
-    model_type = "BasicCNN"
+    generate_specs = False
+    train_only = True
+    model_type = "ResNet50"
+    print(f"Model: {model_type}")
 
     for n_mels in n_mels_list:
         for n_fft in n_fft_list:
@@ -37,7 +38,7 @@ if __name__ == "__main__":
                         spec_dir=preprocessor.dest_dir,
                         model_type=model_type,
                         model_kwargs=model_kwargs,
-                        batch_size=128,
+                        batch_size=512,
                         fold=None,
                     )
                     if train_only:

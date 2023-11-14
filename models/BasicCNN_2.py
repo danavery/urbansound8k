@@ -19,6 +19,9 @@ class BasicCNN_2(nn.Module):
 
         self.fc1 = nn.Linear(self.flat_features, num_classes)
 
+    def train_dev_transforms(self):
+        return None
+
     def convolute(self, x):
         x = self.relu(self.conv1a(self.conv1(x)))
         x = self.pool1(x)

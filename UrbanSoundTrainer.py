@@ -38,7 +38,9 @@ class UrbanSoundTrainer:
         self.batch_size = batch_size
         self.fold = fold
 
-    def prepare_train_val_datasets(self, fold=1):
+    def prepare_train_val_datasets(self, fold=1, transforms=None):
+        if transforms is None:
+            transforms = {"train": None, "val": None}
         val_fold_name = f"fold{fold}"
         spec_dir = Path(self.spec_dir)
         train_folds = [
@@ -46,8 +48,8 @@ class UrbanSoundTrainer:
         ]
         val_folds = [spec_dir / val_fold_name]
 
-        train_dataset = SpectrogramDataset(spec_fold_dirs=train_folds)
-        val_dataset = SpectrogramDataset(spec_fold_dirs=val_folds)
+        train_dataset = SpectrogramDataset(spec_fold_dirs=train_folds, transform=transforms["train"])
+        val_dataset = SpectrogramDataset(spec_fold_dirs=val_folds, transform=transforms["val"])
 
         train_loader = DataLoader(
             train_dataset,
@@ -65,12 +67,14 @@ class UrbanSoundTrainer:
         )
         return train_loader, val_loader
 
-    def prepare_overtrain_dataset(self, fold=None):
+    def prepare_overtrain_dataset(self, fold=None, transforms=None):
+        if transforms is None:
+            transforms = {"train": None, "val": None}
         if fold is not None:
             fold_dirs = [self.spec_dir / f"fold{fold}"]
         else:
             fold_dirs = [self.spec_dir / f"fold{i}" for i in range(1, 11)]
-        spectrogram_dataset = SpectrogramDataset(spec_fold_dirs=fold_dirs)
+        spectrogram_dataset = SpectrogramDataset(spec_fold_dirs=fold_dirs, transform=transforms["train"])
         spectrogram_dataloader = DataLoader(
             spectrogram_dataset,
             batch_size=self.batch_size,
@@ -100,6 +104,7 @@ class UrbanSoundTrainer:
             )
             optimizer = self.optimizer(model.parameters(), **self.optim_params)
             train_dataloader, val_dataloader = self.prepare_train_val_datasets(
+                transforms=model.train_dev_transforms(),
                 fold=fold_num
             )
             for epoch in range(num_epochs):
@@ -141,7 +146,7 @@ class UrbanSoundTrainer:
             f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training."
         )
         for epoch in range(num_epochs):
-            dataloader = self.prepare_overtrain_dataset(self.fold)
+            dataloader = self.prepare_overtrain_dataset(self.fold, transforms=model.train_dev_transforms())
             train_loss, train_acc = self.train(dataloader, model, optimizer)
             print(
                 f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Epoch {epoch+1}/{num_epochs}, ",
@@ -160,8 +165,9 @@ class UrbanSoundTrainer:
         epoch_total = 0
         for batch_idx, (data, target) in enumerate(dataloader):
             data = data.to("cuda")
-            # print(data.shape)
-            data = data.unsqueeze(1)
+            if data.dim() == 3:
+                data = data.unsqueeze(1)
+
             data = F.normalize(data, dim=2)
 
             target = target.to("cuda")
