@@ -66,19 +66,19 @@ class UrbanSoundPreprocessor:
 
         return mel_spec_db
 
-    def preprocess_all_folds(self, index):
-        for record in tqdm(index, total=len(index)):
-            fold_dir = Path(f"fold{record['fold']}")
-            file_name = record["slice_file_name"]
-            source = self.source_dir / fold_dir / file_name
-            dest_fold_dir = self.dest_dir / fold_dir
-            Path.mkdir(dest_fold_dir, exist_ok=True, parents=True)
-            dest_file = dest_fold_dir / f"{file_name}.spec"
+    # def preprocess_all_folds(self, index):
+    #     for record in tqdm(index, total=len(index)):
+    #         fold_dir = Path(f"fold{record['fold']}")
+    #         file_name = record["slice_file_name"]
+    #         source = self.source_dir / fold_dir / file_name
+    #         dest_fold_dir = self.dest_dir / fold_dir
+    #         Path.mkdir(dest_fold_dir, exist_ok=True, parents=True)
+    #         dest_file = dest_fold_dir / f"{file_name}.spec"
 
-            audio, _ = self.preprocess(source)
-            mel_spec_db = self.make_mel_spectrogram(audio)
+    #         audio, _ = self.preprocess(source)
+    #         mel_spec_db = self.make_mel_spectrogram(audio)
 
-            torch.save(mel_spec_db, dest_file)
+    #         torch.save(mel_spec_db, dest_file)
 
     def split_spectrogram(self, spec: torch.Tensor, chunk_size: int) -> torch.Tensor:
         """
