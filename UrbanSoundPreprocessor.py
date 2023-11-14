@@ -11,6 +11,7 @@ from tqdm import tqdm
 class UrbanSoundPreprocessor:
     def __init__(
         self,
+        base_dir="/home/davery/ml/urbansound8k",
         sample_rate=22050,
         n_fft=256,
         hop_factor=0.5,
@@ -19,7 +20,7 @@ class UrbanSoundPreprocessor:
         dataset_name="default",
         fold=1,
     ):
-        self.base_dir = Path("/home/davery/ml/urbansound8k")
+        self.base_dir = Path(base_dir)
         self.source_dir = self.base_dir
         self.dest_dir = self.base_dir / "processed" / str(dataset_name)
         self.index_path = self.base_dir / "UrbanSound8K.csv"

@@ -1,13 +1,13 @@
 import torch
+
 from UrbanSoundPreprocessor import UrbanSoundPreprocessor
 from UrbanSoundTrainer import UrbanSoundTrainer
 
 print(torch.cuda.is_available())
 
-# %%
 if __name__ == "__main__":
     n_mels_list = [100]
-    n_fft_list = [1024]
+    n_fft_list = [512]
     chunk_timesteps = [512]
     generate_specs = False
     train_only = True
@@ -21,6 +21,7 @@ if __name__ == "__main__":
                 dataset_name = f"n_mels-{n_mels}-n_fft-{n_fft}-chunk-{chunk_timestep}"
                 print(dataset_name)
                 preprocessor = UrbanSoundPreprocessor(
+                    base_dir="/home/davery/ml/urbansound8k",
                     n_mels=n_mels,
                     dataset_name=dataset_name,
                     n_fft=n_fft,
@@ -32,13 +33,12 @@ if __name__ == "__main__":
                 input_shape = (preprocessor.n_mels, preprocessor.chunk_timesteps)
                 print(f"{input_shape=}")
                 model_kwargs = {"input_shape": input_shape}
-                print(f"{n_mels=} {model_kwargs}")
                 try:
                     trainer = UrbanSoundTrainer(
                         spec_dir=preprocessor.dest_dir,
                         model_template={"model_type": model_type, "model_kwargs": model_kwargs},
                         batch_size=32,
-                        optim_params={"lr": 0.01},
+                        optim_params={"lr": 0.001},
                         fold=None,
                     )
                     if train_only:
