@@ -9,7 +9,7 @@ if __name__ == "__main__":
     n_mels_list = [75]
     n_fft_list = [512]
     chunk_timesteps = [256, 512, 1024]
-    generate_specs = False
+    generate_specs = True
     train_only = False
     model_type = "BasicCNN"
 
@@ -17,7 +17,7 @@ if __name__ == "__main__":
         for n_fft in n_fft_list:
             for chunk_timestep in chunk_timesteps:
                 print("-" * 50)
-                dataset_name = f"n_mels{n_mels}-n_fft{n_fft}-ct{chunk_timestep}"
+                dataset_name = f"n_mels-{n_mels}-n_fft-{n_fft}-chunk-{chunk_timestep}"
                 print(dataset_name)
                 preprocessor = UrbanSoundPreprocessor(
                     n_mels=n_mels,
@@ -29,6 +29,7 @@ if __name__ == "__main__":
                 if generate_specs:
                     preprocessor.run()
                 input_shape = (preprocessor.n_mels, preprocessor.chunk_timesteps)
+                print(f"{input_shape=}")
                 model_kwargs = {"input_shape": input_shape}
                 print(f"{n_mels=} {model_kwargs}")
                 try:
