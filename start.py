@@ -8,15 +8,17 @@ print(torch.cuda.is_available())
 
 
 if __name__ == "__main__":
-    n_mels_list = [50, 100]
-    n_fft_list = [256, 512, 1024]
-    chunk_timesteps = [128, 256, 512, 1024]
-    overwrite_specs = True
+    n_mels_list = [128]
+    n_fft_list = [256, 512]
+    chunk_timesteps = [448]
+    overwrite_specs = False
     train_only = False
-    model_type = "BasicCNN"
-    lr = 0.00001
+    model_type = "ResNet50"
+    lr = 0.001
     epochs_per_run = 15
+    batch_size = 64
     wandb_run = True
+    mixup_alpha = 0.5  # if 1, then no mixup applied
     print(f"Model: {model_type}")
 
     for n_mels in n_mels_list:
@@ -29,6 +31,7 @@ if __name__ == "__main__":
                     "chunk_timestep": chunk_timestep,
                     "train_only": train_only,
                     "lr": lr,
+                    "mixup_alpha": mixup_alpha,
                 }
                 print(config)
                 if wandb_run:
@@ -56,10 +59,11 @@ if __name__ == "__main__":
                             "model_type": model_type,
                             "model_kwargs": model_kwargs,
                         },
-                        batch_size=32,
+                        batch_size=batch_size,
                         optim_params={"lr": lr},
                         fold=None,
                         wandb_config=wandb.config if wandb_run else None,
+                        mixup_alpha=mixup_alpha
                     )
                     if train_only:
                         train_loss, train_acc = trainer.run_train_only(
@@ -68,9 +72,13 @@ if __name__ == "__main__":
                         print()
                         print(f"{dataset_name=}: {train_loss=} {train_acc=}")
                     else:
-                        train_loss, train_acc, val_loss, val_acc, grouped_acc = trainer.run(
-                            epochs=epochs_per_run, single_fold=1
-                        )
+                        (
+                            train_loss,
+                            train_acc,
+                            val_loss,
+                            val_acc,
+                            grouped_acc,
+                        ) = trainer.run(epochs=epochs_per_run, single_fold=1)
 
                         print()
                         print(

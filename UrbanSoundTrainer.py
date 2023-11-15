@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
+from torch.distributions.beta import Beta
 from torch.utils.data import DataLoader
 
 import wandb
@@ -26,6 +27,7 @@ class UrbanSoundTrainer:
         loss_function=None,
         fold=1,
         batch_size=256,
+        mixup_alpha=1,
     ):
         if optim_params is None:
             self.optim_params = {"lr": 0.0001}
@@ -43,6 +45,7 @@ class UrbanSoundTrainer:
         self.batch_size = batch_size
         self.fold = fold
         self.wandb_config = wandb_config
+        self.mixup_alpha = mixup_alpha
 
     def prepare_train_val_datasets(self, fold=1, transforms=None):
         if transforms is None:
@@ -160,7 +163,13 @@ class UrbanSoundTrainer:
         print(f"Mean validation loss: {mean_val_loss:.5f}")
         print(f"Mean validation accuracy: {mean_val_acc:.2f}%")
         print(f"Mean grouped accuracy: {mean_grouped_acc:.2f}%")
-        return mean_train_loss, mean_train_acc, mean_val_loss, mean_val_acc, mean_grouped_acc
+        return (
+            mean_train_loss,
+            mean_train_acc,
+            mean_val_loss,
+            mean_val_acc,
+            mean_grouped_acc,
+        )
 
     def training_loop_train_only(self, num_epochs):
         model = network_factory(model_type=self.model_type, **self.model_kwargs).to(
@@ -193,6 +202,30 @@ class UrbanSoundTrainer:
                 )
         return train_loss, train_acc
 
+    def sample_beta_distribution(self, alpha, size=1, device="cuda"):
+        distribution = Beta(
+            torch.full((size,), alpha, device=device),
+            torch.full((size,), alpha, device=device),
+        )
+        return distribution.sample()
+
+    def mixup_data(self, x, y, alpha=1.0):
+        """Returns mixed inputs, pairs of targets, and lambda"""
+        if alpha > 0:
+            lam = self.sample_beta_distribution(alpha)
+        else:
+            lam = 1
+
+        batch_size = x.size()[0]
+        index = torch.randperm(batch_size).to("cuda")
+
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = y, y[index]
+        return mixed_x, y_a, y_b, lam
+
+    def mixup_criterion(self, criterion, pred, y_a, y_b, lam):
+        return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
+
     def train(self, dataloader, model, optimizer):
         model.train()
         scaler = GradScaler()
@@ -208,11 +241,19 @@ class UrbanSoundTrainer:
             data = F.normalize(data, dim=2)
 
             optimizer.zero_grad()
+            if self.mixup_alpha != 1:
+                data, target_a, target_b, lam = self.mixup_data(
+                    data, target, alpha=self.mixup_alpha
+                )
 
             with autocast():
                 output = model(data)
-                # print(output)
-                loss = self.loss_function(output, target)
+                if self.mixup_alpha != 1:
+                    loss = self.mixup_criterion(
+                        self.loss_function, output, target_a, target_b, lam
+                    )
+                else:
+                    loss = self.loss_function(output, target)
 
             epoch_loss += loss.item()
 
@@ -237,7 +278,7 @@ class UrbanSoundTrainer:
             parts = filename.split("-")
             label = int(parts[1])
             correct.append(winner == label)
-        return (sum(correct)/len(correct)) * 100
+        return (sum(correct) / len(correct)) * 100
 
     def validate(self, dataloader, model):
         model.eval()
