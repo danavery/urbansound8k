@@ -1,5 +1,6 @@
 import csv
 import shutil
+import os
 from pathlib import Path
 
 import torch
@@ -138,7 +139,9 @@ class UrbanSoundPreprocessor:
         print(f"{split=}")
         print(f"{split.shape=}")
 
-    def create_split_mel_specs(self, index):
+    def create_split_mel_specs(self, index, overwrite):
+        if os.path.exists(self.dest_dir) and not overwrite:
+            return
         shutil.rmtree(self.dest_dir, ignore_errors=True)
         count = 0
         for record in tqdm(index, total=len(index)):
@@ -158,9 +161,10 @@ class UrbanSoundPreprocessor:
                 dest_file = fold_dir / f"{file_name}-{i}.spec"
                 torch.save(chunks[i], dest_file)
                 count += 1
+
         print(f"{count} chunk specs saved")
 
-    def run(self):
+    def run(self, overwrite):
         index = self.load_index()
-        self.create_split_mel_specs(index)
+        self.create_split_mel_specs(index, overwrite)
         # self.plot_sample_spec()

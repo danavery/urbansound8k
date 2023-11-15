@@ -10,12 +10,13 @@ print(torch.cuda.is_available())
 if __name__ == "__main__":
     n_mels_list = [50, 100]
     n_fft_list = [256, 512, 1024]
-    chunk_timesteps = [256, 512, 1024]
-    generate_specs = True
+    chunk_timesteps = [128, 256, 512, 1024]
+    overwrite_specs = True
     train_only = False
-    model_type = "BasicCNN_3"
+    model_type = "BasicCNN"
     lr = 0.00001
-    epochs_per_run = 5
+    epochs_per_run = 15
+    wandb_run = True
     print(f"Model: {model_type}")
 
     for n_mels in n_mels_list:
@@ -29,7 +30,9 @@ if __name__ == "__main__":
                     "train_only": train_only,
                     "lr": lr,
                 }
-                wandb.init(project="urbansound", config=config)
+                print(config)
+                if wandb_run:
+                    wandb.init(project="urbansound", config=config)
                 print("-" * 50)
                 dataset_name = f"n_mels-{n_mels}-n_fft-{n_fft}-chunk-{chunk_timestep}"
                 print(dataset_name)
@@ -41,8 +44,8 @@ if __name__ == "__main__":
                     chunk_timesteps=chunk_timestep,
                     fold=None,
                 )
-                if generate_specs:
-                    preprocessor.run()
+                if overwrite_specs:
+                    preprocessor.run(overwrite=overwrite_specs)
                 input_shape = (preprocessor.n_mels, preprocessor.chunk_timesteps)
                 print(f"{input_shape=}")
                 model_kwargs = {"input_shape": input_shape}
@@ -56,7 +59,7 @@ if __name__ == "__main__":
                         batch_size=32,
                         optim_params={"lr": lr},
                         fold=None,
-                        wandb_config=wandb.config,
+                        wandb_config=wandb.config if wandb_run else None,
                     )
                     if train_only:
                         train_loss, train_acc = trainer.run_train_only(
@@ -65,7 +68,7 @@ if __name__ == "__main__":
                         print()
                         print(f"{dataset_name=}: {train_loss=} {train_acc=}")
                     else:
-                        train_loss, train_acc, val_loss, val_acc = trainer.run(
+                        train_loss, train_acc, val_loss, val_acc, grouped_acc = trainer.run(
                             epochs=epochs_per_run, single_fold=1
                         )
 
@@ -73,7 +76,8 @@ if __name__ == "__main__":
                         print(
                             f"{dataset_name}: {train_loss=:.5f} {train_acc=:.2f}% {val_loss=:.5f} {val_acc=:.2f}%"
                         )
-                    wandb.finish()
+                    if wandb_run:
+                        wandb.finish()
                 except RuntimeError as e:
                     print(f"error in {dataset_name}: {e}")
                     continue

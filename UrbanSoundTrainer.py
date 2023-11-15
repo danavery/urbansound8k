@@ -1,5 +1,6 @@
 import datetime
 import statistics
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import torch
@@ -103,6 +104,7 @@ class UrbanSoundTrainer:
         train_accs = []
         val_losses = []
         val_accs = []
+        grouped_accs = []
         if single_fold is None:
             fold_nums = range(1, 11)
         else:
@@ -127,9 +129,9 @@ class UrbanSoundTrainer:
                     f"\tTrain Loss: {train_loss:.5f}, Train Acc: {train_acc:.2f}%",
                     end="",
                 )
-                val_loss, val_acc = self.validate(val_dataloader, model)
+                val_loss, val_acc, grouped_acc = self.validate(val_dataloader, model)
                 print(
-                    f"\tVal Loss: {val_loss:.5f}, Val Acc: {val_acc:.2f}%",
+                    f"\tVal Loss: {val_loss:.5f}, Val Acc: {val_acc:.2f}%, Grouped Acc: {grouped_acc:.2f}%",
                     end="\n",
                 )
                 if self.wandb_config:
@@ -139,22 +141,26 @@ class UrbanSoundTrainer:
                             "train_acc": train_acc,
                             "val_loss": val_loss,
                             "val_acc": val_acc,
+                            "grouped_acc": grouped_acc,
                         }
                     )
             train_losses.append(train_loss)
             train_accs.append(train_acc)
             val_losses.append(val_loss)
             val_accs.append(val_acc)
+            grouped_accs.append(grouped_acc)
         print()
         mean_train_loss = statistics.mean(train_losses)
         mean_train_acc = statistics.mean(train_accs)
         mean_val_loss = statistics.mean(val_losses)
         mean_val_acc = statistics.mean(val_accs)
+        mean_grouped_acc = statistics.mean(grouped_accs)
         print(f"Mean training loss: {mean_train_loss:.5f}")
         print(f"Mean training accuracy: {mean_train_acc:.2f}%")
         print(f"Mean validation loss: {mean_val_loss:.5f}")
         print(f"Mean validation accuracy: {mean_val_acc:.2f}%")
-        return mean_train_loss, mean_train_acc, mean_val_loss, mean_val_acc
+        print(f"Mean grouped accuracy: {mean_grouped_acc:.2f}%")
+        return mean_train_loss, mean_train_acc, mean_val_loss, mean_val_acc, mean_grouped_acc
 
     def training_loop_train_only(self, num_epochs):
         model = network_factory(model_type=self.model_type, **self.model_kwargs).to(
@@ -193,7 +199,8 @@ class UrbanSoundTrainer:
         epoch_loss = 0.0
         epoch_correct = 0
         epoch_total = 0
-        for batch_idx, (data, target) in enumerate(dataloader):
+
+        for batch_idx, (data, target, filenames) in enumerate(dataloader):
             data, target = data.to("cuda"), target.to("cuda")
             if data.dim() == 3:
                 data = data.unsqueeze(1)
@@ -204,7 +211,9 @@ class UrbanSoundTrainer:
 
             with autocast():
                 output = model(data)
+                # print(output)
                 loss = self.loss_function(output, target)
+
             epoch_loss += loss.item()
 
             # Compute accuracy
@@ -215,9 +224,20 @@ class UrbanSoundTrainer:
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
+
         avg_loss = epoch_loss / len(dataloader)
         avg_acc = 100.0 * epoch_correct / epoch_total
         return avg_loss, avg_acc
+
+    def majority_vote(self, all_chunk_predictions):
+        correct = []
+        for filename, votes in all_chunk_predictions.items():
+            vote_count = Counter(votes)
+            winner = vote_count.most_common(1)[0][0]
+            parts = filename.split("-")
+            label = int(parts[1])
+            correct.append(winner == label)
+        return (sum(correct)/len(correct)) * 100
 
     def validate(self, dataloader, model):
         model.eval()
@@ -225,8 +245,8 @@ class UrbanSoundTrainer:
             epoch_loss = 0.0
             epoch_correct = 0
             epoch_total = 0
-
-            for batch_idx, (data, target) in enumerate(dataloader):
+            all_chunk_predictions = defaultdict(list)
+            for batch_idx, (data, target, filenames) in enumerate(dataloader):
                 data = data.to("cuda")
                 data = data.unsqueeze(1)
                 data = F.normalize(data, dim=2)
@@ -234,6 +254,11 @@ class UrbanSoundTrainer:
                 target = target.to("cuda")
                 with autocast():
                     output = model(data)
+
+                _, predicted = torch.max(output.data, 1)
+                for filename, prediction in zip(filenames, predicted):
+                    all_chunk_predictions[filename].append(prediction.item())
+
                 loss = self.loss_function(output, target)
                 epoch_loss += loss.item()
 
@@ -243,7 +268,9 @@ class UrbanSoundTrainer:
                 epoch_correct += (predicted == target).sum().item()
         avg_loss = epoch_loss / len(dataloader)
         avg_acc = 100.0 * epoch_correct / epoch_total
-        return avg_loss, avg_acc
+        grouped_accuracy = self.majority_vote(all_chunk_predictions)
+
+        return avg_loss, avg_acc, grouped_accuracy
 
     def run_train_only(self, epochs=10):
         return self.training_loop_train_only(epochs)
