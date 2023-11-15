@@ -248,7 +248,8 @@ class UrbanSoundTrainer:
             all_chunk_predictions = defaultdict(list)
             for batch_idx, (data, target, filenames) in enumerate(dataloader):
                 data = data.to("cuda")
-                data = data.unsqueeze(1)
+                if data.dim() == 3:
+                    data = data.unsqueeze(1)
                 data = F.normalize(data, dim=2)
 
                 target = target.to("cuda")
