@@ -9,6 +9,7 @@ import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 
+import wandb
 from network_factory import network_factory
 from SpectrogramDataset import SpectrogramDataset
 
@@ -18,6 +19,7 @@ class UrbanSoundTrainer:
         self,
         spec_dir,
         model_template,
+        wandb_config,
         optimizer=optim.Adam,
         optim_params=None,
         loss_function=None,
@@ -39,6 +41,7 @@ class UrbanSoundTrainer:
         self.spec_dir = spec_dir
         self.batch_size = batch_size
         self.fold = fold
+        self.wandb_config = wandb_config
 
     def prepare_train_val_datasets(self, fold=1, transforms=None):
         if transforms is None:
@@ -50,8 +53,12 @@ class UrbanSoundTrainer:
         ]
         val_folds = [spec_dir / val_fold_name]
 
-        train_dataset = SpectrogramDataset(spec_fold_dirs=train_folds, transform=transforms["train"])
-        val_dataset = SpectrogramDataset(spec_fold_dirs=val_folds, transform=transforms["val"])
+        train_dataset = SpectrogramDataset(
+            spec_fold_dirs=train_folds, transform=transforms["train"]
+        )
+        val_dataset = SpectrogramDataset(
+            spec_fold_dirs=val_folds, transform=transforms["val"]
+        )
 
         train_loader = DataLoader(
             train_dataset,
@@ -76,7 +83,9 @@ class UrbanSoundTrainer:
             fold_dirs = [self.spec_dir / f"fold{fold}"]
         else:
             fold_dirs = [self.spec_dir / f"fold{i}" for i in range(1, 11)]
-        spectrogram_dataset = SpectrogramDataset(spec_fold_dirs=fold_dirs, transform=transforms["train"])
+        spectrogram_dataset = SpectrogramDataset(
+            spec_fold_dirs=fold_dirs, transform=transforms["train"]
+        )
         spectrogram_dataloader = DataLoader(
             spectrogram_dataset,
             batch_size=self.batch_size,
@@ -106,8 +115,7 @@ class UrbanSoundTrainer:
             )
             optimizer = self.optimizer(model.parameters(), **self.optim_params)
             train_dataloader, val_dataloader = self.prepare_train_val_datasets(
-                transforms=model.train_dev_transforms(),
-                fold=fold_num
+                transforms=model.train_dev_transforms(), fold=fold_num
             )
             for epoch in range(num_epochs):
                 print(
@@ -124,6 +132,15 @@ class UrbanSoundTrainer:
                     f"\tVal Loss: {val_loss:.5f}, Val Acc: {val_acc:.2f}%",
                     end="\n",
                 )
+                if self.wandb_config:
+                    wandb.log(
+                        {
+                            "train_loss": train_loss,
+                            "train_acc": train_acc,
+                            "val_loss": val_loss,
+                            "val_acc": val_acc,
+                        }
+                    )
             train_losses.append(train_loss)
             train_accs.append(train_acc)
             val_losses.append(val_loss)
@@ -148,7 +165,9 @@ class UrbanSoundTrainer:
             f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training."
         )
         for epoch in range(num_epochs):
-            dataloader = self.prepare_overtrain_dataset(self.fold, transforms=model.train_dev_transforms())
+            dataloader = self.prepare_overtrain_dataset(
+                self.fold, transforms=model.train_dev_transforms()
+            )
             train_loss, train_acc = self.train(dataloader, model, optimizer)
             print(
                 f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Epoch {epoch+1}/{num_epochs}, ",
@@ -158,6 +177,14 @@ class UrbanSoundTrainer:
                 f"Train Loss: {train_loss:.5f}, Train Accuracy: {train_acc:.2f}%",
                 end="\n",
             )
+            if self.wandb_config:
+                wandb.log(
+                    {
+                        "epoch": epoch,
+                        "train_loss": train_loss,
+                        "train_acc": train_acc,
+                    }
+                )
         return train_loss, train_acc
 
     def train(self, dataloader, model, optimizer):
