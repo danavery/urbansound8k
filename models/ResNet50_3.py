@@ -1,22 +1,31 @@
-import torch
 import torch.nn as nn
 from torchvision.models import resnet50
 from torchvision import transforms
 
 
-class ResNet50(nn.Module):
+class ResNet50_3(nn.Module):
     def __init__(self, input_shape=None, num_classes=10):
-        super(ResNet50, self).__init__()
+        super(ResNet50_3, self).__init__()
         self.model = resnet50(weights="IMAGENET1K_V2")
         for param in self.model.parameters():
             param.requires_grad = False
 
-        for layer in [self.model.layer3, self.model.layer4, self.model.fc]:
+        for layer in [self.model.layer2, self.model.layer3, self.model.layer4, self.model.fc]:
             for param in layer.parameters():
                 param.requires_grad = True
 
         num_ftrs = self.model.fc.in_features
-        self.model.fc = torch.nn.Linear(num_ftrs, num_classes)
+        self.fc_layers = nn.Sequential(
+            nn.Linear(num_ftrs, 512),
+            nn.ReLU(),
+            nn.Dropout(0.5),  # Optional: Dropout for regularization
+            nn.Linear(512, 256),
+            nn.ReLU(),
+            nn.Dropout(0.5),  # Optional: Dropout for regularization
+            nn.Linear(256, num_classes)
+        )
+
+        self.model.fc = self.fc_layers
 
     def train_dev_transforms(self):
         train_dev_transforms = {
@@ -44,4 +53,4 @@ class ResNet50(nn.Module):
 
 
 if __name__ == "__main__":
-    model = ResNet50()
+    model = ResNet50_3()

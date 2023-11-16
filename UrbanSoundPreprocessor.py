@@ -39,7 +39,7 @@ class UrbanSoundPreprocessor:
             index = [row for row in csv_reader]
         return index
 
-    def preprocess(self, filepath):
+    def preprocess(self, filepath: Path):
         audio, file_sr = torchaudio.load(filepath)
 
         if audio.shape[0] > 1:
@@ -54,7 +54,7 @@ class UrbanSoundPreprocessor:
 
         return audio, self.sample_rate, num_samples, total_duration
 
-    def make_mel_spectrogram(self, audio):
+    def make_mel_spectrogram(self, audio: torch.Tensor) -> torch.Tensor:
         spec_transformer = MelSpectrogram(
             sample_rate=self.sample_rate,
             n_fft=self.n_fft,
@@ -167,4 +167,3 @@ class UrbanSoundPreprocessor:
     def run(self, overwrite):
         index = self.load_index()
         self.create_split_mel_specs(index, overwrite)
-        # self.plot_sample_spec()
