@@ -46,6 +46,7 @@ class UrbanSoundTrainer:
         self.fold = fold
         self.wandb_config = wandb_config
         self.mixup_alpha = mixup_alpha
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def prepare_train_val_datasets(self, fold=1, transforms=None):
         if transforms is None:
@@ -116,7 +117,7 @@ class UrbanSoundTrainer:
             print()
             print(f"Val fold: {fold_num}")
             model = network_factory(model_type=self.model_type, **self.model_kwargs).to(
-                "cuda"
+                self.device
             )
             optimizer = self.optimizer(model.parameters(), **self.optim_params)
             train_dataloader, val_dataloader = self.prepare_train_val_datasets(
@@ -173,7 +174,7 @@ class UrbanSoundTrainer:
 
     def training_loop_train_only(self, num_epochs):
         model = network_factory(model_type=self.model_type, **self.model_kwargs).to(
-            "cuda"
+            self.device
         )
         optimizer = self.optimizer(model.parameters(), **self.optim_params)
         print(
@@ -212,12 +213,12 @@ class UrbanSoundTrainer:
     def mixup_data(self, x, y, alpha=1.0):
         """Returns mixed inputs, pairs of targets, and lambda"""
         if alpha > 0:
-            lam = self.sample_beta_distribution(alpha)
+            lam = self.sample_beta_distribution(alpha, device=self.device)
         else:
             lam = 1
 
         batch_size = x.size()[0]
-        index = torch.randperm(batch_size).to("cuda")
+        index = torch.randperm(batch_size).to(self.device)
 
         mixed_x = lam * x + (1 - lam) * x[index, :]
         y_a, y_b = y, y[index]
@@ -234,7 +235,7 @@ class UrbanSoundTrainer:
         epoch_total = 0
 
         for batch_idx, (data, target, filenames) in enumerate(dataloader):
-            data, target = data.to("cuda"), target.to("cuda")
+            data, target = data.to(self.device), target.to(self.device)
             if data.dim() == 3:
                 data = data.unsqueeze(1)
 
@@ -288,12 +289,12 @@ class UrbanSoundTrainer:
             epoch_total = 0
             all_chunk_predictions = defaultdict(list)
             for batch_idx, (data, target, filenames) in enumerate(dataloader):
-                data = data.to("cuda")
+                data = data.to(self.device)
                 if data.dim() == 3:
                     data = data.unsqueeze(1)
                 data = F.normalize(data, dim=2)
 
-                target = target.to("cuda")
+                target = target.to(self.device)
                 with autocast():
                     output = model(data)
 
