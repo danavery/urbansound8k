@@ -4,21 +4,23 @@ import wandb
 from UrbanSoundPreprocessor import UrbanSoundPreprocessor
 from UrbanSoundTrainer import UrbanSoundTrainer
 
-print(torch.cuda.is_available())
 
-
-if __name__ == "__main__":
+def main():
+    print(f"{torch.cuda.is_available()=}")
+    print(f"{torch.backends.mps.is_available()=}")
+    print("hello")
+    urbansound_dir = "/Users/davery/urbansound8k"
     n_mels_list = [128]
-    n_fft_list = [256, 512]
-    chunk_timesteps = [448]
+    n_fft_list = [512]
+    chunk_timesteps = [112]
     overwrite_specs = False
     train_only = False
-    model_type = "ResNet50"
-    lr = 0.001
-    epochs_per_run = 15
-    batch_size = 64
-    wandb_run = True
-    mixup_alpha = 0.5  # if 1, then no mixup applied
+    model_type = "BasicCNN_2"
+    lr = 0.000005
+    epochs_per_run = 2
+    batch_size = 256
+    wandb_run = False
+    mixup_alpha = 1  # if 1, then no mixup applied
     print(f"Model: {model_type}")
 
     for n_mels in n_mels_list:
@@ -40,7 +42,7 @@ if __name__ == "__main__":
                 dataset_name = f"n_mels-{n_mels}-n_fft-{n_fft}-chunk-{chunk_timestep}"
                 print(dataset_name)
                 preprocessor = UrbanSoundPreprocessor(
-                    base_dir="/home/davery/ml/urbansound8k",
+                    base_dir=urbansound_dir,
                     n_mels=n_mels,
                     dataset_name=dataset_name,
                     n_fft=n_fft,
@@ -82,10 +84,14 @@ if __name__ == "__main__":
 
                         print()
                         print(
-                            f"{dataset_name}: {train_loss=:.5f} {train_acc=:.2f}% {val_loss=:.5f} {val_acc=:.2f}%"
+                            f"{dataset_name}: {train_loss=:.5f} {train_acc=:.2f}% {val_loss=:.5f} {val_acc=:.2f}% {grouped_acc=:.2f}%"
                         )
                     if wandb_run:
                         wandb.finish()
                 except RuntimeError as e:
                     print(f"error in {dataset_name}: {e}")
                     continue
+
+
+if __name__ == "__main__":
+    main()
