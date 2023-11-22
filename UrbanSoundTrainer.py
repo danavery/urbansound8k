@@ -42,6 +42,8 @@ class UrbanSoundTrainer:
         self.optim_params = optim_params
 
         self.spec_dir = spec_dir
+        self.saved_models_dir = spec_dir.parent / "saved_models"
+        self.saved_models_dir.mkdir(parents=True, exist_ok=True)
         self.batch_size = batch_size
         self.fold = fold
         self.wandb_config = wandb_config
@@ -167,8 +169,10 @@ class UrbanSoundTrainer:
             {
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "wandb_config": self.wandb_config,
             },
-            f"model_optim_state_dict_{self.model_type}_{self.run_timestamp}.pth",
+            self.saved_models_dir
+            / f"model_dict_{self.model_type}_{self.run_timestamp}.pth",
         )
         return (
             mean_train_loss,
@@ -215,8 +219,9 @@ class UrbanSoundTrainer:
             {
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "wandb_config": self.wandb_config,
             },
-            f"model_optim_state_dict_{self.run_timestamp}.pth",
+            self.saved_models_dir / f"model_dict_{self.run_timestamp}.pth",
         )
         return train_loss, train_acc
 
