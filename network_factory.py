@@ -5,6 +5,8 @@ from models.BasicCNN_3_BN import BasicCNN_3_BN
 from models.ResNet50 import ResNet50
 from models.ResNet50_2 import ResNet50_2
 from models.ResNet50_3 import ResNet50_3
+from models.ResNet50_4 import ResNet50_4
+from models.ResNet50_5 import ResNet50_5
 
 
 def network_factory(model_type, **model_kwargs):
@@ -22,5 +24,9 @@ def network_factory(model_type, **model_kwargs):
         return ResNet50_2(**model_kwargs)
     if model_type == "ResNet50_3":
         return ResNet50_3(**model_kwargs)
+    if model_type == "ResNet50_4":
+        return ResNet50_4(**model_kwargs)
+    if model_type == "ResNet50_5":
+        return ResNet50_5(**model_kwargs)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
