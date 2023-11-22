@@ -26,7 +26,7 @@ class UrbanSoundTrainer:
         optim_params=None,
         loss_function=None,
         fold=1,
-        batch_size=256,
+        batch_size=128,
         mixup_alpha=1,
     ):
         if optim_params is None:
@@ -46,7 +46,8 @@ class UrbanSoundTrainer:
         self.fold = fold
         self.wandb_config = wandb_config
         self.mixup_alpha = mixup_alpha
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        self.run_timestamp = self.formatted_timestamp(filename=True)
 
     def prepare_train_val_datasets(self, fold=1, transforms=None):
         if transforms is None:
@@ -101,9 +102,7 @@ class UrbanSoundTrainer:
         return spectrogram_dataloader
 
     def cross_validation_loop(self, num_epochs, single_fold=None):
-        print(
-            f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training with cross-validation."
-        )
+        print(f"{self.formatted_timestamp()}: Starting training with cross-validation.")
         train_losses = []
         train_accs = []
         val_losses = []
@@ -125,7 +124,7 @@ class UrbanSoundTrainer:
             )
             for epoch in range(num_epochs):
                 print(
-                    f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Epoch {epoch+1}/{num_epochs}, ",
+                    f"{self.formatted_timestamp()}: Epoch {epoch+1}/{num_epochs}, ",
                     end="\n",
                 )
                 train_loss, train_acc = self.train(train_dataloader, model, optimizer)
@@ -164,6 +163,13 @@ class UrbanSoundTrainer:
         print(f"Mean validation loss: {mean_val_loss:.5f}")
         print(f"Mean validation accuracy: {mean_val_acc:.2f}%")
         print(f"Mean grouped accuracy: {mean_grouped_acc:.2f}%")
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+            },
+            f"model_optim_state_dict_{self.model_type}_{self.run_timestamp}.pth",
+        )
         return (
             mean_train_loss,
             mean_train_acc,
@@ -172,21 +178,25 @@ class UrbanSoundTrainer:
             mean_grouped_acc,
         )
 
+    def formatted_timestamp(self, filename=False):
+        if filename:
+            return datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        else:
+            return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     def training_loop_train_only(self, num_epochs):
         model = network_factory(model_type=self.model_type, **self.model_kwargs).to(
             self.device
         )
         optimizer = self.optimizer(model.parameters(), **self.optim_params)
-        print(
-            f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Starting training."
-        )
+        print(f"{self.formatted_timestamp()}: Starting training.")
         for epoch in range(num_epochs):
             dataloader = self.prepare_overtrain_dataset(
                 self.fold, transforms=model.train_dev_transforms()
             )
             train_loss, train_acc = self.train(dataloader, model, optimizer)
             print(
-                f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: Epoch {epoch+1}/{num_epochs}, ",
+                f"{self.formatted_timestamp()}: Epoch {epoch+1}/{num_epochs}, ",
                 end="",
             )
             print(
@@ -201,6 +211,13 @@ class UrbanSoundTrainer:
                         "train_acc": train_acc,
                     }
                 )
+        torch.save(
+            {
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+            },
+            f"model_optim_state_dict_{self.run_timestamp}.pth",
+        )
         return train_loss, train_acc
 
     def sample_beta_distribution(self, alpha, size=1, device="cuda"):
@@ -227,9 +244,20 @@ class UrbanSoundTrainer:
     def mixup_criterion(self, criterion, pred, y_a, y_b, lam):
         return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
+    def forward_pass(self, model, data, target, target_a=None, target_b=None, lam=None):
+        output = model(data)
+        if self.mixup_alpha != 1:
+            loss = self.mixup_criterion(
+                self.loss_function, output, target_a, target_b, lam
+            )
+        else:
+            loss = self.loss_function(output, target)
+        return output, loss
+
     def train(self, dataloader, model, optimizer):
         model.train()
-        scaler = GradScaler()
+        if self.device == "cuda":
+            scaler = GradScaler()
         epoch_loss = 0.0
         epoch_correct = 0
         epoch_total = 0
@@ -247,14 +275,13 @@ class UrbanSoundTrainer:
                     data, target, alpha=self.mixup_alpha
                 )
 
-            with autocast():
-                output = model(data)
-                if self.mixup_alpha != 1:
-                    loss = self.mixup_criterion(
-                        self.loss_function, output, target_a, target_b, lam
+            if self.device == "cuda":
+                with autocast():
+                    output, loss = self.forward_pass(
+                        model, data, target, target_a, target_b, lam
                     )
-                else:
-                    loss = self.loss_function(output, target)
+            else:
+                output, loss = self.forward_pass(model, data, target)
 
             epoch_loss += loss.item()
 
@@ -263,9 +290,13 @@ class UrbanSoundTrainer:
             epoch_total += target.size(0)
             epoch_correct += (predicted == target).sum().item()
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            if self.device == "cuda":
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
 
         avg_loss = epoch_loss / len(dataloader)
         avg_acc = 100.0 * epoch_correct / epoch_total
@@ -295,7 +326,10 @@ class UrbanSoundTrainer:
                 data = F.normalize(data, dim=2)
 
                 target = target.to(self.device)
-                with autocast():
+                if self.device == "cuda":
+                    with autocast():
+                        output = model(data)
+                else:
                     output = model(data)
 
                 _, predicted = torch.max(output.data, 1)
