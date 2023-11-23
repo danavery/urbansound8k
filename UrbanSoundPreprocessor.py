@@ -37,15 +37,27 @@ class UrbanSoundPreprocessor:
         if self.data_source == "hf":
             self.dataset = load_dataset("danavery/urbansound8k")["train"]
 
-    def load_index(self):
-        if self.data_source == "local":
-            index = {}
-            with open(self.index_path, encoding="UTF-8") as index_file:
-                csv_reader = csv.DictReader(index_file)
-                index = [row for row in csv_reader]
-            return index
-        else:
-            return None
+    def run(self, overwrite):
+        self.create_split_mel_specs(overwrite)
+
+    def create_split_mel_specs(self, overwrite):
+        if os.path.exists(self.dest_dir) and not overwrite:
+            return
+        shutil.rmtree(self.dest_dir, ignore_errors=True)
+        count = 0
+
+        data_iterable = self.get_data_iterable()
+        for record in data_iterable:
+            if self.fold and record["fold"] != str(self.fold):
+                continue
+
+            audio, file_sr = self.load_audio_data(record)
+            chunks = self.process_audio(audio, file_sr)
+
+            self.save_chunks(count, record, chunks)
+            count += len(chunks)
+
+        print(f"{count} chunk specs saved")
 
     def load_audio_data(self, record):
         if self.data_source == "local":
@@ -61,6 +73,24 @@ class UrbanSoundPreprocessor:
             if audio.ndim == 1:
                 audio = audio.unsqueeze(0)  # Add a channel dimension
         return audio, sr
+
+    def get_data_iterable(self):
+        if self.data_source == "local":
+            data_index = self.load_index()
+            data_iterable = tqdm(data_index, total=len(data_index))
+        elif self.data_source == "hf":
+            data_iterable = tqdm(self.dataset, total=len(self.dataset))
+        return data_iterable
+
+    def load_index(self):
+        if self.data_source == "local":
+            index = {}
+            with open(self.index_path, encoding="UTF-8") as index_file:
+                csv_reader = csv.DictReader(index_file)
+                index = [row for row in csv_reader]
+            return index
+        else:
+            return None
 
     def preprocess(self, audio, file_sr):
         if audio.shape[0] > 1:
@@ -131,40 +161,21 @@ class UrbanSoundPreprocessor:
         chunks = unfolded.transpose(0, 1)
         return chunks.contiguous()
 
-    def create_split_mel_specs(self, overwrite):
-        if os.path.exists(self.dest_dir) and not overwrite:
-            return
-        shutil.rmtree(self.dest_dir, ignore_errors=True)
-        count = 0
-        if self.data_source == "local":
-            data_index = self.load_index()
-            data_iterable = tqdm(data_index, total=len(data_index))
-        elif self.data_source == "hf":
-            data_iterable = tqdm(self.dataset, total=len(self.dataset))
+    def save_chunks(self, count, record, chunks):
+        fold_dir_name = f"fold{record['fold']}"
+        fold_dir = self.dest_dir / fold_dir_name
+        Path.mkdir(fold_dir, exist_ok=True, parents=True)
+        file_name = record["slice_file_name"]
 
-        for record in data_iterable:
-            if self.fold and record["fold"] != str(self.fold):
-                continue
+        for i in range(len(chunks)):
+            dest_file = fold_dir / f"{file_name}-{i}.spec"
+            torch.save(chunks[i], dest_file)
 
-            audio, file_sr = self.load_audio_data(record)
-            audio, num_samples, total_duration = self.preprocess(audio, file_sr)
-            mel_spec_db = self.make_mel_spectrogram(audio)
-            chunks = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
-
-            fold_dir_name = f"fold{record['fold']}"
-            fold_dir = self.dest_dir / fold_dir_name
-            Path.mkdir(fold_dir, exist_ok=True, parents=True)
-            file_name = record["slice_file_name"]
-
-            for i in range(len(chunks)):
-                dest_file = fold_dir / f"{file_name}-{i}.spec"
-                torch.save(chunks[i], dest_file)
-                count += 1
-
-        print(f"{count} chunk specs saved")
-
-    def run(self, overwrite):
-        self.create_split_mel_specs(overwrite)
+    def process_audio(self, audio, file_sr):
+        audio, num_samples, total_duration = self.preprocess(audio, file_sr)
+        mel_spec_db = self.make_mel_spectrogram(audio)
+        chunks = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
+        return chunks
 
 
 if __name__ == "__main__":
