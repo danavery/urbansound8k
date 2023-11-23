@@ -8,20 +8,24 @@ from UrbanSoundTrainer import UrbanSoundTrainer
 def main():
     print(f"{torch.cuda.is_available()=}")
     print(f"{torch.backends.mps.is_available()=}")
-    print("hello")
     urbansound_dir = "/Users/davery/urbansound8k"
     n_mels_list = [128]
     n_fft_list = [512]
     chunk_timesteps = [112]
-    overwrite_specs = True
+    overwrite_specs = False
     train_only = False
-    model_type = "BasicCNN_2"
+    model_type = "BasicCNN"
     lr = 0.000005
-    epochs_per_run = 2
+    epochs_per_run = 1
     batch_size = 256
     wandb_run = False
-    mixup_alpha = 1  # if 1, then no mixup applied
-    data_source = "local"  # "hf" for hugging face dataset, "local" for dataset in urbansound_dir
+
+    # if 1, then no mixup applied
+    mixup_alpha = 1
+
+    # "hf" for hugging face dataset, "local" for dataset in urbansound_dir
+    data_source = "hf"
+
     print(f"Model: {model_type}")
 
     for n_mels in n_mels_list:
@@ -67,7 +71,7 @@ def main():
                         optim_params={"lr": lr},
                         fold=None,
                         wandb_config=wandb.config if wandb_run else None,
-                        mixup_alpha=mixup_alpha
+                        mixup_alpha=mixup_alpha,
                     )
                     if train_only:
                         train_loss, train_acc = trainer.run_train_only(
@@ -76,17 +80,11 @@ def main():
                         print()
                         print(f"{dataset_name=}: {train_loss=} {train_acc=}")
                     else:
-                        (
-                            train_loss,
-                            train_acc,
-                            val_loss,
-                            val_acc,
-                            grouped_acc,
-                        ) = trainer.run(epochs=epochs_per_run, single_fold=1)
+                        results = trainer.run(epochs=epochs_per_run, single_fold=1)
 
                         print()
                         print(
-                            f"{dataset_name}: {train_loss=:.5f} {train_acc=:.2f}% {val_loss=:.5f} {val_acc=:.2f}% {grouped_acc=:.2f}%"
+                            f"{dataset_name}: {results['train_loss']=:.5f} {results['train_acc']=:.2f}% {results['val_loss']=:.5f} {results['val_acc']=:.2f}% {results['grouped_acc']=:.2f}%"
                         )
                     if wandb_run:
                         wandb.finish()

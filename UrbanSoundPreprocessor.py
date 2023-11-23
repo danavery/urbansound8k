@@ -74,6 +74,12 @@ class UrbanSoundPreprocessor:
                 audio = audio.unsqueeze(0)  # Add a channel dimension
         return audio, sr
 
+    def process_audio(self, audio, file_sr):
+        audio, num_samples, total_duration = self.preprocess(audio, file_sr)
+        mel_spec_db = self.make_mel_spectrogram(audio)
+        chunks = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
+        return chunks
+
     def get_data_iterable(self):
         if self.data_source == "local":
             data_index = self.load_index()
@@ -170,12 +176,6 @@ class UrbanSoundPreprocessor:
         for i in range(len(chunks)):
             dest_file = fold_dir / f"{file_name}-{i}.spec"
             torch.save(chunks[i], dest_file)
-
-    def process_audio(self, audio, file_sr):
-        audio, num_samples, total_duration = self.preprocess(audio, file_sr)
-        mel_spec_db = self.make_mel_spectrogram(audio)
-        chunks = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
-        return chunks
 
 
 if __name__ == "__main__":

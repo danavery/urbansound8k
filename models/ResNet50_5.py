@@ -16,7 +16,7 @@ class ResNet50_5(nn.Module):
                 param.requires_grad = True
 
         num_ftrs = self.model.fc.in_features
-        print(f"{num_ftrs=}")
+        fo(f"{num_ftrs=}")
         self.fc_layers = nn.Sequential(
             nn.Linear(num_ftrs, 512),
             nn.ReLU(),
