@@ -3,6 +3,7 @@ import shutil
 import os
 from pathlib import Path
 
+from datasets import load_dataset
 import torch
 import torchaudio
 from torchaudio.transforms import AmplitudeToDB, MelSpectrogram, Resample
@@ -20,6 +21,7 @@ class UrbanSoundPreprocessor:
         chunk_timesteps=1000,
         dataset_name="default",
         fold=1,
+        data_source="local",
     ):
         self.base_dir = Path(base_dir)
         self.source_dir = self.base_dir
@@ -31,28 +33,48 @@ class UrbanSoundPreprocessor:
         self.n_mels = n_mels
         self.chunk_timesteps = chunk_timesteps
         self.fold = fold
+        self.data_source = data_source
+        if self.data_source == "hf":
+            self.dataset = load_dataset("danavery/urbansound8k")["train"]
 
     def load_index(self):
-        index = {}
-        with open(self.index_path, encoding="UTF-8") as index_file:
-            csv_reader = csv.DictReader(index_file)
-            index = [row for row in csv_reader]
-        return index
+        if self.data_source == "local":
+            index = {}
+            with open(self.index_path, encoding="UTF-8") as index_file:
+                csv_reader = csv.DictReader(index_file)
+                index = [row for row in csv_reader]
+            return index
+        else:
+            return None
 
-    def preprocess(self, filepath: Path):
-        audio, file_sr = torchaudio.load(filepath)
+    def load_audio_data(self, record):
+        if self.data_source == "local":
+            filepath = (
+                self.source_dir / f"fold{record['fold']}" / record["slice_file_name"]
+            )
+            audio, sr = torchaudio.load(filepath)
+        elif self.data_source == "hf":
+            audio_data = record["audio"]
+            audio, sr = audio_data["array"], audio_data["sampling_rate"]
+            audio = torch.tensor(audio)
+            audio = audio.float()
+            if audio.ndim == 1:
+                audio = audio.unsqueeze(0)  # Add a channel dimension
+        return audio, sr
 
+    def preprocess(self, audio, file_sr):
         if audio.shape[0] > 1:
             audio = torch.mean(audio, dim=0, keepdim=True)
 
         if file_sr != self.sample_rate:
             resampler = Resample(file_sr, self.sample_rate)
             audio = resampler(audio)
+            audio = audio.float()
 
         num_samples = audio.shape[-1]
         total_duration = num_samples / self.sample_rate
 
-        return audio, self.sample_rate, num_samples, total_duration
+        return audio, num_samples, total_duration
 
     def make_mel_spectrogram(self, audio: torch.Tensor) -> torch.Tensor:
         spec_transformer = MelSpectrogram(
@@ -67,20 +89,6 @@ class UrbanSoundPreprocessor:
         mel_spec_db = amplitude_to_db_transformer(mel_spec)
 
         return mel_spec_db
-
-    # def preprocess_all_folds(self, index):
-    #     for record in tqdm(index, total=len(index)):
-    #         fold_dir = Path(f"fold{record['fold']}")
-    #         file_name = record["slice_file_name"]
-    #         source = self.source_dir / fold_dir / file_name
-    #         dest_fold_dir = self.dest_dir / fold_dir
-    #         Path.mkdir(dest_fold_dir, exist_ok=True, parents=True)
-    #         dest_file = dest_fold_dir / f"{file_name}.spec"
-
-    #         audio, _ = self.preprocess(source)
-    #         mel_spec_db = self.make_mel_spectrogram(audio)
-
-    #         torch.save(mel_spec_db, dest_file)
 
     def split_spectrogram(self, spec: torch.Tensor, chunk_size: int) -> torch.Tensor:
         """
@@ -123,7 +131,46 @@ class UrbanSoundPreprocessor:
         chunks = unfolded.transpose(0, 1)
         return chunks.contiguous()
 
-    def test_split_spectrogram(self):
+    def create_split_mel_specs(self, overwrite):
+        if os.path.exists(self.dest_dir) and not overwrite:
+            return
+        shutil.rmtree(self.dest_dir, ignore_errors=True)
+        count = 0
+        if self.data_source == "local":
+            data_index = self.load_index()
+            data_iterable = tqdm(data_index, total=len(data_index))
+        elif self.data_source == "hf":
+            data_iterable = tqdm(self.dataset, total=len(self.dataset))
+
+        for record in data_iterable:
+            if self.fold and record["fold"] != str(self.fold):
+                continue
+
+            audio, file_sr = self.load_audio_data(record)
+            audio, num_samples, total_duration = self.preprocess(audio, file_sr)
+            mel_spec_db = self.make_mel_spectrogram(audio)
+            chunks = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
+
+            fold_dir_name = f"fold{record['fold']}"
+            fold_dir = self.dest_dir / fold_dir_name
+            Path.mkdir(fold_dir, exist_ok=True, parents=True)
+            file_name = record["slice_file_name"]
+
+            for i in range(len(chunks)):
+                dest_file = fold_dir / f"{file_name}-{i}.spec"
+                torch.save(chunks[i], dest_file)
+                count += 1
+
+        print(f"{count} chunk specs saved")
+
+    def run(self, overwrite):
+        self.create_split_mel_specs(overwrite)
+
+
+if __name__ == "__main__":
+    usp = UrbanSoundPreprocessor()
+
+    def test_split_spectrogram():
         minispec = torch.tensor(
             [
                 [5, 6, 7, 8, 9],
@@ -135,35 +182,8 @@ class UrbanSoundPreprocessor:
         )
         print(f"{minispec=}")
         print(f"{minispec.shape=}")
-        split = self.split_spectrogram(minispec, 2)
+        split = usp.split_spectrogram(minispec, 2)
         print(f"{split=}")
         print(f"{split.shape=}")
 
-    def create_split_mel_specs(self, index, overwrite):
-        if os.path.exists(self.dest_dir) and not overwrite:
-            return
-        shutil.rmtree(self.dest_dir, ignore_errors=True)
-        count = 0
-        for record in tqdm(index, total=len(index)):
-            if self.fold and record["fold"] != str(self.fold):
-                continue
-            fold_dir_name = f"fold{record['fold']}"
-            file_name = record["slice_file_name"]
-            source = self.source_dir / fold_dir_name / file_name
-            fold_dir = self.dest_dir / fold_dir_name
-            Path.mkdir(fold_dir, exist_ok=True, parents=True)
-
-            audio, sr, num_samples, total_duration = self.preprocess(source)
-            mel_spec_db = self.make_mel_spectrogram(audio)
-            chunks = self.split_spectrogram(mel_spec_db, self.chunk_timesteps)
-
-            for i in range(len(chunks)):
-                dest_file = fold_dir / f"{file_name}-{i}.spec"
-                torch.save(chunks[i], dest_file)
-                count += 1
-
-        print(f"{count} chunk specs saved")
-
-    def run(self, overwrite):
-        index = self.load_index()
-        self.create_split_mel_specs(index, overwrite)
+    test_split_spectrogram()

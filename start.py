@@ -13,7 +13,7 @@ def main():
     n_mels_list = [128]
     n_fft_list = [512]
     chunk_timesteps = [112]
-    overwrite_specs = False
+    overwrite_specs = True
     train_only = False
     model_type = "BasicCNN_2"
     lr = 0.000005
@@ -21,6 +21,7 @@ def main():
     batch_size = 256
     wandb_run = False
     mixup_alpha = 1  # if 1, then no mixup applied
+    data_source = "local"  # "hf" for hugging face dataset, "local" for dataset in urbansound_dir
     print(f"Model: {model_type}")
 
     for n_mels in n_mels_list:
@@ -48,6 +49,7 @@ def main():
                     n_fft=n_fft,
                     chunk_timesteps=chunk_timestep,
                     fold=None,
+                    data_source=data_source,
                 )
                 if overwrite_specs:
                     preprocessor.run(overwrite=overwrite_specs)

@@ -22,8 +22,8 @@ class SpectrogramDataset(Dataset):
         if self.transform:
             spec = self.transform(spec)
 
-        pos = file_name.find('.wav')
-        original_filename = file_name[:pos + 4]
+        pos = file_name.find(".wav")
+        original_filename = file_name[: pos + 4]
 
         parts = file_name.split("-")
         label = int(parts[1])
