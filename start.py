@@ -39,7 +39,7 @@ def create_trainer(preprocessor, config, batch_size, mixup_alpha, wandb_run):
     return trainer
 
 
-def run_training(train_only, epochs_per_run, dataset_name, trainer):
+def run_training(trainer, epochs_per_run, dataset_name, train_only):
     if train_only:
         train_loss, train_acc = trainer.run_train_only(epochs=epochs_per_run)
         print(f"\n{dataset_name=}: {train_loss=} {train_acc=}")
@@ -59,18 +59,17 @@ def main():
     # "hf" for hugging face dataset, "local" for dataset in urbansound_dir
     data_source = "hf"
     source_dir = "/Users/davery/urbansound8k"
-    overwrite_specs = False
+    overwrite_specs = True
     train_only = False
     epochs_per_run = 1
     wandb_run = False
 
     model_type = "BasicCNN_2"
     n_mels_list = [128]
-    n_fft_list = [512]
+    n_fft_list = [1024]
     chunk_timesteps = [112]
     lr = 0.000005
-    # if 1, then no mixup applied
-    mixup_alpha = 1
+    mixup_alpha = 1  # if 1, then no mixup applied
     batch_size = 256
 
     print(f"Model: {model_type}")
@@ -88,9 +87,9 @@ def main():
                     "batch_size": batch_size,
                 }
                 print(config)
+                print("-" * 50)
                 if wandb_run:
                     wandb.init(project="urbansound", config=config)
-                print("-" * 50)
                 preprocessor, dataset_name = create_preprocessor(
                     config, data_source, source_dir, overwrite_specs
                 )
@@ -98,7 +97,7 @@ def main():
                     trainer = create_trainer(
                         preprocessor, config, batch_size, mixup_alpha, wandb_run
                     )
-                    run_training(train_only, epochs_per_run, dataset_name, trainer)
+                    run_training(trainer, epochs_per_run, dataset_name, train_only)
                     if wandb_run:
                         wandb.finish()
                 except RuntimeError as e:

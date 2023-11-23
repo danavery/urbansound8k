@@ -17,17 +17,17 @@ class SpectrogramDataset(Dataset):
 
     def __getitem__(self, idx):
         file_path = self.spec_paths[idx]
-        file_name = Path(file_path).name
-        spec = torch.load(self.spec_paths[idx])
+        spec = torch.load(file_path)
         if self.transform:
             spec = self.transform(spec)
 
-        pos = file_name.find(".wav")
-        original_filename = file_name[: pos + 4]
-
+        file_name = Path(file_path).name
         parts = file_name.split("-")
         label = int(parts[1])
         if self.target_transform:
             label = self.target_transform(label)
+
+        pos = file_name.find(".wav")
+        original_filename = file_name[: pos + 4]
 
         return spec, label, original_filename
