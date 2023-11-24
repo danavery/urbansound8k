@@ -69,8 +69,7 @@ def create_preprocessor(config, data_source, source_dir, overwrite_specs):
         fold=None,
         data_source=data_source,
     )
-    if overwrite_specs:
-        preprocessor.run(overwrite=True)
+    preprocessor.run(overwrite=overwrite_specs)
     return preprocessor, dataset_name
 
 
