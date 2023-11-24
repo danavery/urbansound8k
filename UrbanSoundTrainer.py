@@ -124,7 +124,7 @@ class UrbanSoundTrainer:
         print(f"Mean validation loss: {final_results['val_loss']:.5f}")
         print(f"Mean validation accuracy: {final_results['val_acc']:.2f}%")
         print(f"Mean majority vote accuracy: {final_results['majority_acc']:.2f}%")
-        print(f"Mean probability avg accuracy: {final_results['prob_avg_acc']:.2f}")
+        print(f"Mean probability avg accuracy: {final_results['prob_avg_acc']:.2f}%")
         return final_results
 
     def training_loop_train_only(self, num_epochs):
