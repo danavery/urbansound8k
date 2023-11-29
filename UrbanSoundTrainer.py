@@ -10,6 +10,7 @@ import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 
+from tqdm import tqdm
 import wandb
 from Mixup import Mixup
 from network_factory import network_factory
@@ -95,7 +96,7 @@ class UrbanSoundTrainer:
                 )
                 print(f"\tVal Loss: {val_loss:.5f}, Val Acc: {val_acc:.2f}%")
                 print(
-                    f"Majority Acc: {majority_acc:.2f}%, Prob Avg Acc: {prob_avg_acc:.2f}%"
+                    f"\tMajority Acc: {majority_acc:.2f}%, Prob Avg Acc: {prob_avg_acc:.2f}%"
                 )
                 if self.wandb_config:
                     wandb.log(
@@ -163,7 +164,7 @@ class UrbanSoundTrainer:
         epoch_correct = 0
         epoch_total = 0
 
-        for batch_idx, (data, target, filenames) in enumerate(dataloader):
+        for batch_idx, (data, target, filenames) in enumerate(tqdm(dataloader, desc="Training")):
             data, target = data.to(self.device), target.to(self.device)
             if data.dim() == 3:
                 data = data.unsqueeze(1)
@@ -208,7 +209,7 @@ class UrbanSoundTrainer:
             epoch_correct = 0
             epoch_total = 0
             all_chunk_probabilities = defaultdict(list)
-            for batch_idx, (data, target, filenames) in enumerate(dataloader):
+            for batch_idx, (data, target, filenames) in enumerate(tqdm(dataloader, desc="Validating")):
                 data = data.to(self.device)
                 if data.dim() == 3:
                     data = data.unsqueeze(1)
