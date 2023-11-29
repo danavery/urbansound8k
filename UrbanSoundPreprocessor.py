@@ -13,20 +13,21 @@ from tqdm import tqdm
 class UrbanSoundPreprocessor:
     def __init__(
         self,
-        base_dir="/home/davery/ml/urbansound8k",
+        base_source_dir="/home/davery/ml/urbansound8k",
+        base_dest_dir="/home/davery/ml/urbansound8k/processed/default",
         sample_rate=22050,
         n_fft=256,
         hop_factor=0.5,
         n_mels=100,
         chunk_timesteps=1000,
-        dataset_name="default",
         fold=1,
         data_source="local",
     ):
-        self.base_dir = Path(base_dir)
-        self.source_dir = self.base_dir
-        self.dest_dir = self.base_dir / "processed" / str(dataset_name)
-        self.index_path = self.base_dir / "UrbanSound8K.csv"
+        self.base_source_path = Path(base_source_dir)
+        self.source_dir = self.base_source_path
+        self.dest_dir_path = Path(base_dest_dir)
+        self.dest_dir = self.dest_dir_path
+        self.index_path = self.source_dir / "UrbanSound8K.csv"
         self.sample_rate = sample_rate
         self.n_fft = n_fft
         self.hop_length = int(self.n_fft * hop_factor)
