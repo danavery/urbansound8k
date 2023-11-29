@@ -11,7 +11,13 @@ class ResNet50_5(nn.Module):
         for param in self.model.parameters():
             param.requires_grad = False
 
-        for layer in [self.model.layer1, self.model.layer2, self.model.layer3, self.model.layer4, self.model.fc]:
+        for layer in [
+            self.model.layer1,
+            self.model.layer2,
+            self.model.layer3,
+            self.model.layer4,
+            self.model.fc,
+        ]:
             for param in layer.parameters():
                 param.requires_grad = True
 
@@ -24,7 +30,7 @@ class ResNet50_5(nn.Module):
             nn.Linear(512, 256),
             nn.ReLU(),
             nn.Dropout(0.5),  # Optional: Dropout for regularization
-            nn.Linear(256, num_classes)
+            nn.Linear(256, num_classes),
         )
 
         self.model.fc = self.fc_layers
@@ -33,21 +39,31 @@ class ResNet50_5(nn.Module):
         train_dev_transforms = {
             "train": transforms.Compose(
                 [
-                    transforms.Lambda(lambda x: x.unsqueeze(0)),
-                    torchaudio.transforms.TimeMasking(time_mask_param=80, iid_masks=True),
-                    torchaudio.transforms.FrequencyMasking(freq_mask_param=80, iid_masks=True),
-                    transforms.Lambda(lambda x: x.repeat(3, 1, 1)),  # Add channel dimension and repeat
-                    transforms.Resize(224, antialias=True),  # Resize the shorter side to 224, maintaining aspect ratio
-                    transforms.Pad((0, 0, 224, 224), fill=0, padding_mode='constant'),  # Pad to make it 224x224
+                    UnsqueezeTransform(),
+                    torchaudio.transforms.TimeMasking(
+                        time_mask_param=80, iid_masks=True
+                    ),
+                    torchaudio.transforms.FrequencyMasking(
+                        freq_mask_param=80, iid_masks=True
+                    ),
+                    RepeatTransform(),
+                    transforms.Resize(
+                        224, antialias=True
+                    ),  # Resize the shorter side to 224, maintaining aspect ratio
+                    transforms.Pad(
+                        (0, 0, 224, 224), fill=0, padding_mode="constant"
+                    ),  # Pad to make it 224x224
                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-
                 ]
             ),
             "val": transforms.Compose(
                 [
-                    transforms.Lambda(lambda x: x.unsqueeze(0).repeat(3, 1, 1)),  # Add channel dimension and repeat
-                    transforms.Resize(224, antialias=True),  # Resize the shorter side to 224, maintaining aspect ratio
-                    transforms.Pad((0, 0, 224, 224), fill=0, padding_mode='constant'),
+                    UnsqueezeTransform(),
+                    RepeatTransform(),
+                    transforms.Resize(
+                        224, antialias=True
+                    ),  # Resize the shorter side to 224, maintaining aspect ratio
+                    transforms.Pad((0, 0, 224, 224), fill=0, padding_mode="constant"),
                     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
                 ]
             ),
@@ -56,6 +72,19 @@ class ResNet50_5(nn.Module):
 
     def forward(self, x):
         return self.model(x)
+
+
+# replacing Lambda transforms with these because of multiprocessing issues
+class UnsqueezeTransform:
+    def __call__(self, x):
+        x = x.unsqueeze(0)
+        return x
+
+
+class RepeatTransform:
+    def __call__(self, x):
+        x = x.repeat(3, 1, 1)
+        return x
 
 
 if __name__ == "__main__":
